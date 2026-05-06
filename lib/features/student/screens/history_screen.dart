@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:mcq_test_app/core/constants/app_colors.dart';
 import 'package:mcq_test_app/core/services/supabase_service.dart';
+import 'package:mcq_test_app/core/widgets/animated_page.dart';
+import 'package:mcq_test_app/core/widgets/app_gradient_background.dart';
 import 'package:mcq_test_app/features/student/screens/result_screen.dart';
 
 class HistoryScreen extends StatelessWidget {
@@ -13,9 +15,10 @@ class HistoryScreen extends StatelessWidget {
       appBar: AppBar(
         title: const Text('Test History'),
       ),
-      body: FutureBuilder<List<Map<String, dynamic>>>(
-        future: SupabaseService().getStudentHistory(),
-        builder: (context, snapshot) {
+      body: AppGradientBackground(
+        child: FutureBuilder<List<Map<String, dynamic>>>(
+          future: SupabaseService().getStudentHistory(),
+          builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           }
@@ -33,10 +36,11 @@ class HistoryScreen extends StatelessWidget {
             );
           }
 
-          return ListView.builder(
-            padding: const EdgeInsets.all(20),
-            itemCount: attempts.length,
-            itemBuilder: (context, index) {
+          return AnimatedPage(
+            child: ListView.builder(
+              padding: const EdgeInsets.all(20),
+              itemCount: attempts.length,
+              itemBuilder: (context, index) {
               final attempt = attempts[index];
               final testData = attempt['tests']; // Joined test data
               
@@ -90,8 +94,10 @@ class HistoryScreen extends StatelessWidget {
                 ),
               );
             },
+            ),
           );
         },
+        ),
       ),
     );
   }

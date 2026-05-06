@@ -5,7 +5,7 @@ import 'package:mcq_test_app/models/question.dart';
 import 'package:syncfusion_flutter_pdf/pdf.dart';
 
 class AiGeneratorService {
-  static const _apiKey = 'AIzaSyBZsQW_c4PqYb25f7H31PsxJm5ycLrdl_A';
+
 
   bool _isModelNotAvailableError(Object error) {
     final message = error.toString().toLowerCase();
@@ -103,6 +103,7 @@ class AiGeneratorService {
     required int count,
     required String testId,
     required String medium,
+    required String apiKey,
     String modelName = 'gemini-2.5-flash',
   }) async {
     final prompt = 'Generate $count unique MCQs in a JSON array format.';
@@ -113,7 +114,7 @@ class AiGeneratorService {
       try {
         final model = GenerativeModel(
           model: candidateModel,
-          apiKey: _apiKey,
+          apiKey: apiKey,
           systemInstruction: Content.system(
             'You are an expert exam paper setter for Class 11-12 Science. '
             'Language: ${medium.toUpperCase()}. '
@@ -177,6 +178,7 @@ class AiGeneratorService {
     required String testId,
     required String medium,
     required List<int> pdfBytes,
+    required String apiKey,
     String modelName = 'gemini-2.5-flash',
   }) async {
     // 1. Extract text from PDF locally
@@ -211,7 +213,7 @@ class AiGeneratorService {
       try {
         final model = GenerativeModel(
           model: candidateModel,
-          apiKey: _apiKey,
+          apiKey: apiKey,
           systemInstruction: Content.system(
             'You are an expert exam paper setter for Class 11-12 Science. '
             'Language: ${medium.toUpperCase()}. '

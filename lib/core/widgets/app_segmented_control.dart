@@ -18,27 +18,53 @@ class AppSegmentedControl extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
+      height: 52,
       decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(14),
+        color: AppColors.cardLight,
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(color: AppColors.border),
       ),
       padding: const EdgeInsets.all(4),
-      child: Row(
+      child: Stack(
         children: [
-          Expanded(
-            child: _SegmentItem(
-              label: leftLabel,
-              selected: isLeftSelected,
-              onTap: () => onChanged(true),
+          AnimatedAlign(
+            alignment: isLeftSelected ? Alignment.centerLeft : Alignment.centerRight,
+            duration: const Duration(milliseconds: 250),
+            curve: Curves.easeInOutCubic,
+            child: Container(
+              width: (MediaQuery.of(context).size.width - 96) / 2, // Approximate
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: AppColors.primaryGradient,
+                ),
+                borderRadius: BorderRadius.circular(12),
+                boxShadow: [
+                  BoxShadow(
+                    color: AppColors.primary.withOpacity(0.3),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
             ),
           ),
-          Expanded(
-            child: _SegmentItem(
-              label: rightLabel,
-              selected: !isLeftSelected,
-              onTap: () => onChanged(false),
-            ),
+          Row(
+            children: [
+              Expanded(
+                child: _SegmentItem(
+                  label: leftLabel,
+                  selected: isLeftSelected,
+                  onTap: () => onChanged(true),
+                ),
+              ),
+              Expanded(
+                child: _SegmentItem(
+                  label: rightLabel,
+                  selected: !isLeftSelected,
+                  onTap: () => onChanged(false),
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -59,25 +85,20 @@ class _SegmentItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final textStyle = Theme.of(context).textTheme.labelLarge?.copyWith(
-          fontWeight: FontWeight.w700,
-          color: selected ? Colors.white : AppColors.textPrimary,
-        );
-
-    return InkWell(
+    return GestureDetector(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 160),
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        decoration: BoxDecoration(
-          color: selected ? AppColors.primary : Colors.transparent,
-          borderRadius: BorderRadius.circular(12),
+      behavior: HitTestBehavior.opaque,
+      child: Center(
+        child: AnimatedDefaultTextStyle(
+          duration: const Duration(milliseconds: 250),
+          style: TextStyle(
+            fontSize: 15,
+            fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+            color: selected ? Colors.white : AppColors.textSecondary,
+          ),
+          child: Text(label),
         ),
-        alignment: Alignment.center,
-        child: Text(label, style: textStyle),
       ),
     );
   }
 }
-

@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:mcq_test_app/core/constants/app_colors.dart';
 import 'package:mcq_test_app/core/services/supabase_service.dart';
+import 'package:mcq_test_app/core/widgets/animated_page.dart';
 import 'package:mcq_test_app/core/widgets/app_card.dart';
+import 'package:mcq_test_app/core/widgets/app_gradient_background.dart';
 import 'package:mcq_test_app/core/widgets/app_section_title.dart';
-import 'package:mcq_test_app/features/student/screens/test_taking_screen.dart';
-import 'package:mcq_test_app/features/student/screens/result_screen.dart';
 import 'package:mcq_test_app/features/auth/screens/login_screen.dart';
+import 'package:mcq_test_app/features/student/screens/result_screen.dart';
+import 'package:mcq_test_app/features/student/screens/test_taking_screen.dart';
 
 class StudentDashboard extends StatefulWidget {
   const StudentDashboard({super.key});
@@ -50,14 +52,12 @@ class _StudentDashboardState extends State<StudentDashboard> {
         );
         return;
       }
-
       if (test.studentClass != studentClass.toString()) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('This test is not for your class')),
         );
         return;
       }
-
       if (test.division != null && test.division != studentDivision) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('This test is not for your division')),
@@ -81,7 +81,10 @@ class _StudentDashboardState extends State<StudentDashboard> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Unable to join test: $e')),
+        SnackBar(
+          content: Text('Unable to join test: $e'),
+          backgroundColor: AppColors.error,
+        ),
       );
     } finally {
       if (mounted) setState(() => _isJoiningById = false);
@@ -94,8 +97,9 @@ class _StudentDashboardState extends State<StudentDashboard> {
     final user = supabase.currentUser;
 
     return Scaffold(
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
-        title: const Text('Student Dashboard'),
+        title: const Text('Dashboard'),
         actions: [
           IconButton(
             onPressed: () async {
@@ -107,82 +111,91 @@ class _StudentDashboardState extends State<StudentDashboard> {
                 );
               }
             },
-            icon: const Icon(Icons.logout),
+            icon: const Icon(Icons.logout_rounded),
           ),
+          const SizedBox(width: 8),
         ],
       ),
-      body: user == null 
-          ? const Center(child: Text('Please login'))
-          : FutureBuilder<Map<String, dynamic>?>(
-              future: supabase.getUserProfile(user.id),
-              builder: (context, profileSnapshot) {
-                if (profileSnapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-                final profile = profileSnapshot.data;
-                final studentClass = profile?['class'] ?? 11;
-                final studentDiv = profile?['division'] ?? 'A';
-                final studentGroup = profile?['student_group'] ?? 'No Group';
+      body: AppGradientBackground(
+        child: user == null
+            ? const Center(child: Text('Please login'))
+            : FutureBuilder<Map<String, dynamic>?>(
+                future: supabase.getUserProfile(user.id),
+                builder: (context, profileSnapshot) {
+                  if (profileSnapshot.connectionState == ConnectionState.waiting) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
+                  final profile = profileSnapshot.data;
+                  final studentClass = profile?['class'] ?? 11;
+                  final studentDiv = profile?['division'] ?? 'A';
+                  final studentGroup = profile?['student_group'] ?? 'No Group';
 
-                return ListView(
-                  padding: const EdgeInsets.all(20),
-                  children: [
-                    _buildWelcomeHeader(
-                      context,
-                      profile?['name'] ?? profile?['email']?.split('@')[0] ?? 'Student',
-                      studentClass,
-                      studentDiv,
-                      studentGroup,
+                  return AnimatedPage(
+                    child: ListView(
+                      padding: const EdgeInsets.fromLTRB(24, 110, 24, 24),
+                      children: [
+                        _buildWelcomeHeader(
+                          context,
+                          profile?['name'] ?? profile?['email']?.split('@')[0] ?? 'Student',
+                          studentClass,
+                          studentDiv,
+                          studentGroup,
+                        ),
+                        const SizedBox(height: 24),
+                        _buildJoinWithTestIdCard(
+                          context: context,
+                          studentClass: studentClass,
+                          studentDivision: studentDiv,
+                        ),
+                        const SizedBox(height: 32),
+                        const AppSectionTitle(title: 'Recent Activity'),
+                        const SizedBox(height: 16),
+                        FutureBuilder<List<Map<String, dynamic>>>(
+                          future: supabase.getStudentHistory(),
+                          builder: (context, snapshot) {
+                            if (snapshot.connectionState == ConnectionState.waiting) {
+                              return const Padding(
+                                padding: EdgeInsets.symmetric(vertical: 40),
+                                child: Center(child: CircularProgressIndicator()),
+                              );
+                            }
+                            if (snapshot.hasError) {
+                              return Padding(
+                                padding: const EdgeInsets.symmetric(vertical: 40),
+                                child: Center(child: Text('Error: ${snapshot.error}')),
+                              );
+                            }
+
+                            final attempts = snapshot.data ?? [];
+                            if (attempts.isEmpty) {
+                              return AppCard(
+                                child: Column(
+                                  children: [
+                                    Icon(Icons.assignment_turned_in_outlined, 
+                                      size: 48, color: AppColors.textMuted),
+                                    const SizedBox(height: 12),
+                                    Text('No attempted tests yet', 
+                                      style: TextStyle(color: AppColors.textSecondary)),
+                                  ],
+                                ),
+                              );
+                            }
+
+                            return ListView.separated(
+                              shrinkWrap: true,
+                              physics: const NeverScrollableScrollPhysics(),
+                              itemCount: attempts.length,
+                              separatorBuilder: (_, __) => const SizedBox(height: 12),
+                              itemBuilder: (context, index) => _buildAttemptCard(attempts[index]),
+                            );
+                          },
+                        ),
+                      ],
                     ),
-                    const SizedBox(height: 20),
-                    _buildHistorySummary(),
-                    const SizedBox(height: 20),
-                    _buildJoinWithTestIdCard(
-                      context: context,
-                      studentClass: studentClass,
-                      studentDivision: studentDiv,
-                    ),
-                    const SizedBox(height: 24),
-                    const AppSectionTitle(title: 'Attempted Tests'),
-                    const SizedBox(height: 16),
-                    FutureBuilder<List<Map<String, dynamic>>>(
-                      future: supabase.getStudentHistory(),
-                      builder: (context, snapshot) {
-                        if (snapshot.connectionState == ConnectionState.waiting) {
-                          return const Padding(
-                            padding: EdgeInsets.symmetric(vertical: 24),
-                            child: Center(child: CircularProgressIndicator()),
-                          );
-                        }
-                        if (snapshot.hasError) {
-                          return Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 24),
-                            child: Center(child: Text('Error: ${snapshot.error}')),
-                          );
-                        }
-
-                        final attempts = snapshot.data ?? [];
-
-                        if (attempts.isEmpty) {
-                          return const Padding(
-                            padding: EdgeInsets.symmetric(vertical: 24),
-                            child: Center(
-                              child: Text('No attempted tests yet.'),
-                            ),
-                          );
-                        }
-
-                        return Column(
-                          children: attempts
-                              .map((attempt) => _buildAttemptCard(attempt))
-                              .toList(),
-                        );
-                      },
-                    ),
-                  ],
-                );
-              }
-            ),
+                  );
+                },
+              ),
+      ),
     );
   }
 
@@ -195,16 +208,21 @@ class _StudentDashboardState extends State<StudentDashboard> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Join Test with ID',
-            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: AppColors.primarySoft,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(Icons.vpn_key_rounded, color: AppColors.primary, size: 20),
+              ),
+              const SizedBox(width: 12),
+              const Text('Join New Test', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            ],
           ),
-          const SizedBox(height: 8),
-          const Text(
-            'Ask your teacher for the Test ID and enter it here.',
-            style: TextStyle(color: AppColors.textSecondary),
-          ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 16),
           Row(
             children: [
               Expanded(
@@ -212,13 +230,14 @@ class _StudentDashboardState extends State<StudentDashboard> {
                   controller: _testIdController,
                   textCapitalization: TextCapitalization.none,
                   decoration: const InputDecoration(
-                    hintText: 'e.g. a1b2c3',
+                    hintText: 'Enter test code',
+                    contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                   ),
                 ),
               ),
               const SizedBox(width: 12),
               SizedBox(
-                height: 48,
+                height: 52,
                 child: ElevatedButton(
                   onPressed: _isJoiningById
                       ? null
@@ -228,14 +247,15 @@ class _StudentDashboardState extends State<StudentDashboard> {
                             studentDivision: studentDivision,
                           ),
                   style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    minimumSize: const Size(72, 48),
+                    padding: const EdgeInsets.symmetric(horizontal: 24),
+                    minimumSize: const Size(80, 52),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                   ),
                   child: _isJoiningById
                       ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white),
                         )
                       : const Text('Join'),
                 ),
@@ -257,40 +277,82 @@ class _StudentDashboardState extends State<StudentDashboard> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          'Hello, $name',
-          style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+        Row(
+          children: [
+            CircleAvatar(
+              radius: 28,
+              backgroundColor: AppColors.primary,
+              child: Text(
+                name[0].toUpperCase(),
+                style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold),
+              ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Hey, $name 👋',
+                    style: TextStyle(fontSize: 24, fontWeight: FontWeight.w800, color: AppColors.textPrimary),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Class $className • Div $division • $group',
+                    style: TextStyle(color: AppColors.textSecondary, fontWeight: FontWeight.w500),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
-        Text(
-          'Class $className | Division $division | $group',
-          style: Theme.of(context).textTheme.bodyMedium,
-        ),
-      ],
-    );
-  }
-
-  Widget _buildHistorySummary() {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [AppColors.primary, AppColors.secondary],
-        ),
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: const Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('Overall Progress', style: TextStyle(color: Colors.white70)),
-              Text('85%', style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: Colors.white)),
+        const SizedBox(height: 24),
+        Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              colors: [AppColors.primary, AppColors.primaryDark],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            borderRadius: BorderRadius.circular(24),
+            boxShadow: [
+              BoxShadow(
+                color: AppColors.primary.withOpacity(0.3),
+                blurRadius: 15,
+                offset: const Offset(0, 8),
+              ),
             ],
           ),
-          Icon(Icons.auto_graph, size: 48, color: Colors.white54),
-        ],
-      ),
+          child: Row(
+            children: [
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Ready for a challenge?',
+                      style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                    ),
+                    SizedBox(height: 4),
+                    Text(
+                      'Complete your tests to track your academic progress.',
+                      style: TextStyle(color: Colors.white70, fontSize: 13),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              Image.network(
+                'https://cdn-icons-png.flaticon.com/512/4207/4207247.png',
+                width: 60,
+                height: 60,
+                errorBuilder: (_, __, ___) => const Icon(Icons.rocket_launch_rounded, color: Colors.white, size: 48),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 
@@ -302,16 +364,13 @@ class _StudentDashboardState extends State<StudentDashboard> {
     final level = (testData?['level'] ?? '').toString().toUpperCase();
     final score = attempt['score']?.toString() ?? '0';
     final submittedAtRaw = attempt['submitted_at']?.toString();
-    final submittedOn = submittedAtRaw == null || submittedAtRaw.isEmpty
-        ? '-'
-        : submittedAtRaw.split('T').first;
+    final submittedOn = submittedAtRaw == null || submittedAtRaw.isEmpty ? '-' : submittedAtRaw.split('T').first;
 
     final attemptId = attempt['id']?.toString();
     final testId = testData?['id']?.toString();
     final parsedScore = int.tryParse(score) ?? 0;
 
     return AppCard(
-      margin: const EdgeInsets.only(bottom: 16),
       onTap: (attemptId == null || testId == null)
           ? null
           : () => _openResultPreview(
@@ -321,40 +380,38 @@ class _StudentDashboardState extends State<StudentDashboard> {
                 score: parsedScore,
               ),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  '$subject: $topic',
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Score: $score',
-                  style: const TextStyle(color: AppColors.primary, fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 4),
-                Text('Duration: $duration mins'),
-                const SizedBox(height: 4),
-                Text('Submitted: $submittedOn'),
-                const SizedBox(height: 4),
-                const Text(
-                  'Tap card to review answers',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: AppColors.textSecondary,
-                    fontStyle: FontStyle.italic,
-                  ),
-                ),
-              ],
+          Container(
+            width: 50,
+            height: 50,
+            decoration: BoxDecoration(
+              color: AppColors.background,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(
+              Icons.description_outlined,
+              color: level == 'JEE' ? AppColors.error : (level == 'NEET' ? AppColors.warning : AppColors.success),
             ),
           ),
           const SizedBox(width: 16),
-          _buildLevelBadge(level),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('$subject: $topic', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                const SizedBox(height: 4),
+                Text('Submitted on $submittedOn', style: TextStyle(color: AppColors.textMuted, fontSize: 12)),
+              ],
+            ),
+          ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text('$score%', style: const TextStyle(color: AppColors.primary, fontWeight: FontWeight.w800, fontSize: 18)),
+              const SizedBox(height: 4),
+              _buildLevelBadge(level),
+            ],
+          ),
         ],
       ),
     );
@@ -394,22 +451,22 @@ class _StudentDashboardState extends State<StudentDashboard> {
       if (!context.mounted) return;
       Navigator.pop(context);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to load test details: $e')),
+        SnackBar(content: Text('Failed to load test details: $e'), backgroundColor: AppColors.error),
       );
     }
   }
 
   Widget _buildLevelBadge(String level) {
-    Color color = AppColors.boardGreen;
-    if (level == 'NEET') color = AppColors.orange;
-    if (level == 'JEE') color = AppColors.jeeRed;
+    Color color = AppColors.success;
+    if (level == 'NEET') color = AppColors.warning;
+    if (level == 'JEE') color = AppColors.error;
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.2),
-        borderRadius: BorderRadius.circular(4),
-        border: Border.all(color: color),
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: color.withOpacity(0.2)),
       ),
       child: Text(
         level,

@@ -2,6 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:mcq_test_app/core/constants/app_colors.dart';
 import 'package:mcq_test_app/core/services/supabase_service.dart';
+import 'package:mcq_test_app/core/widgets/animated_page.dart';
+import 'package:mcq_test_app/core/widgets/app_card.dart';
+import 'package:mcq_test_app/core/widgets/app_gradient_background.dart';
+import 'package:mcq_test_app/core/widgets/app_section_title.dart';
 import 'package:mcq_test_app/models/question.dart';
 import 'package:mcq_test_app/models/test.dart';
 import 'package:flutter_spinkit/flutter_spinkit.dart';
@@ -17,14 +21,13 @@ class QuestionPreviewScreen extends StatefulWidget {
 
 class _QuestionPreviewScreenState extends State<QuestionPreviewScreen> {
   late List<Question> _questions;
+  bool _isLoading = false;
 
   @override
   void initState() {
     super.initState();
     _questions = List.from(widget.questions);
   }
-
-  bool _isLoading = false;
 
   void _saveTest(TestStatus status) async {
     setState(() => _isLoading = true);
@@ -33,11 +36,9 @@ class _QuestionPreviewScreenState extends State<QuestionPreviewScreen> {
       
       String testId;
       if (widget.test.id.isNotEmpty) {
-        // Update existing test status
         testId = widget.test.id;
         await supabase.updateTest(testId, status);
       } else {
-        // Create new test
         final testToSave = Test(
           teacherId: widget.test.teacherId,
           studentClass: widget.test.studentClass,
@@ -51,7 +52,6 @@ class _QuestionPreviewScreenState extends State<QuestionPreviewScreen> {
         );
         testId = await supabase.createTest(testToSave);
 
-        // Save questions only for new tests (assuming drafts already have them)
         final finalQuestions = _questions.map((q) => Question(
           testId: testId,
           questionText: q.questionText,
@@ -67,14 +67,17 @@ class _QuestionPreviewScreenState extends State<QuestionPreviewScreen> {
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Test ${status == TestStatus.published ? 'published' : 'saved as draft'} successfully!')),
+          SnackBar(
+            content: Text('Test ${status == TestStatus.published ? 'published' : 'saved as draft'} successfully!'),
+            backgroundColor: AppColors.success,
+          ),
         );
         Navigator.popUntil(context, (route) => route.isFirst);
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to save: $e')),
+          SnackBar(content: Text('Failed to save: $e'), backgroundColor: AppColors.error),
         );
       }
     } finally {
@@ -85,47 +88,51 @@ class _QuestionPreviewScreenState extends State<QuestionPreviewScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
-        title: const Text('Preview Questions'),
+        title: const Text('Review Questions'),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
+          onPressed: () => Navigator.pop(context),
+        ),
       ),
-      body: Stack(
-        children: [
-          ListView.builder(
-            padding: const EdgeInsets.all(16),
-            itemCount: _questions.length,
-            itemBuilder: (context, index) {
-              if (index == 0) {
-                return Column(
-                  children: [
-                    _buildTestInfoCard(),
-                    _buildQuestionCard(_questions[index], index),
-                  ],
-                );
-              }
-              return _buildQuestionCard(_questions[index], index);
-            },
-          ),
-          if (_isLoading)
-            Container(
-              color: Colors.black54,
-              child: const Center(
-                child: SpinKitPulse(color: AppColors.purple, size: 50.0),
+      body: AppGradientBackground(
+        child: Stack(
+          children: [
+            SafeArea(
+              child: AnimatedPage(
+                child: ListView.separated(
+                  padding: const EdgeInsets.all(24),
+                  itemCount: _questions.length + 1,
+                  separatorBuilder: (_, __) => const SizedBox(height: 16),
+                  itemBuilder: (context, index) {
+                    if (index == 0) return _buildTestInfoCard();
+                    return _buildQuestionCard(_questions[index - 1], index - 1);
+                  },
+                ),
               ),
             ),
-        ],
+            if (_isLoading) _buildLoadingOverlay(),
+          ],
+        ),
       ),
-      bottomNavigationBar: Padding(
-        padding: const EdgeInsets.all(16.0),
+      bottomNavigationBar: Container(
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          border: const Border(top: BorderSide(color: AppColors.border)),
+        ),
         child: Row(
           children: [
             Expanded(
               child: OutlinedButton(
                 onPressed: _isLoading ? null : () => _saveTest(TestStatus.draft),
-                child: const Text('Save as Draft'),
+                child: const Text('Draft'),
               ),
             ),
             const SizedBox(width: 16),
             Expanded(
+              flex: 2,
               child: ElevatedButton(
                 onPressed: _isLoading ? null : () => _saveTest(TestStatus.published),
                 child: const Text('Publish Test'),
@@ -138,124 +145,165 @@ class _QuestionPreviewScreenState extends State<QuestionPreviewScreen> {
   }
 
   Widget _buildTestInfoCard() {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 24),
-      color: AppColors.purple.withOpacity(0.1),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: const BorderSide(color: AppColors.purple, width: 1),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Row(
-          children: [
-            const Icon(Icons.vpn_key_outlined, color: AppColors.purple),
-            const SizedBox(width: 12),
-            Column(
+    return AppCard(
+      color: AppColors.primarySoft,
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: AppColors.primary,
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: const Icon(Icons.vpn_key_rounded, color: Colors.white, size: 24),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('Unique Test ID',
-                    style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                const Text('Unique Test ID', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppColors.primary)),
+                const SizedBox(height: 4),
                 Row(
                   children: [
-                    Text(widget.test.testCode ?? 'N/A',
-                        style: const TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                            letterSpacing: 2)),
+                    Text(
+                      widget.test.testCode ?? 'N/A',
+                      style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900, letterSpacing: 2, color: AppColors.textPrimary),
+                    ),
                     const SizedBox(width: 8),
                     IconButton(
-                      icon: const Icon(Icons.copy, size: 18, color: AppColors.purple),
+                      icon: const Icon(Icons.copy_rounded, size: 18, color: AppColors.primary),
                       onPressed: () {
                         if (widget.test.testCode != null) {
                           Clipboard.setData(ClipboardData(text: widget.test.testCode!));
                           ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Test ID copied to clipboard!')),
+                            const SnackBar(content: Text('Test ID copied!')),
                           );
                         }
                       },
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
                     ),
                   ],
                 ),
               ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
 
   Widget _buildQuestionCard(Question question, int index) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 16),
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  'Question ${index + 1}',
-                  style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.purple),
-                ),
-                Row(
-                  children: [
-                    IconButton(icon: const Icon(Icons.edit_outlined, size: 20), onPressed: () {}),
-                    IconButton(icon: const Icon(Icons.delete_outline, size: 20, color: Colors.redAccent), onPressed: () {}),
-                  ],
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Text(question.questionText, style: const TextStyle(fontSize: 16)),
+    return AppCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Question ${index + 1}',
+                style: const TextStyle(fontWeight: FontWeight.w800, color: AppColors.primary, fontSize: 13),
+              ),
+              Row(
+                children: [
+                  IconButton(
+                    icon: Icon(Icons.edit_note_rounded, size: 22, color: AppColors.textSecondary),
+                    onPressed: () {},
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                  ),
+                  const SizedBox(width: 12),
+                  IconButton(
+                    icon: const Icon(Icons.delete_outline_rounded, size: 22, color: AppColors.error),
+                    onPressed: () {},
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Text(
+            question.questionText,
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.textPrimary, height: 1.4),
+          ),
+          const SizedBox(height: 20),
+          _buildOption('A', question.optionA, question.correctAnswer == 'A'),
+          _buildOption('B', question.optionB, question.correctAnswer == 'B'),
+          _buildOption('C', question.optionC, question.correctAnswer == 'C'),
+          _buildOption('D', question.optionD, question.correctAnswer == 'D'),
+          if (question.explanation.isNotEmpty) ...[
             const SizedBox(height: 16),
-            _buildOption('A', question.optionA, question.correctAnswer == 'A'),
-            _buildOption('B', question.optionB, question.correctAnswer == 'B'),
-            _buildOption('C', question.optionC, question.correctAnswer == 'C'),
-            _buildOption('D', question.optionD, question.correctAnswer == 'D'),
-            const SizedBox(height: 12),
             Container(
-              padding: const EdgeInsets.all(12),
+              width: double.infinity,
+              padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(
-                color: AppColors.surface,
-                borderRadius: BorderRadius.circular(8),
+                color: AppColors.background,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: AppColors.border),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('Explanation:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
-                  const SizedBox(height: 4),
-                  Text(question.explanation, style: const TextStyle(fontSize: 13, color: AppColors.textSecondary)),
+                  const Text('Explanation', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 11, color: AppColors.textSecondary, letterSpacing: 1)),
+                  const SizedBox(height: 6),
+                  Text(question.explanation, style: TextStyle(fontSize: 13, color: AppColors.textSecondary, height: 1.5)),
                 ],
               ),
             ),
           ],
-        ),
+        ],
       ),
     );
   }
 
   Widget _buildOption(String label, String text, bool isCorrect) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 8.0),
+      padding: const EdgeInsets.only(bottom: 10),
       child: Row(
         children: [
           Container(
-            width: 32,
-            height: 32,
+            width: 28,
+            height: 28,
             decoration: BoxDecoration(
-              color: isCorrect ? AppColors.purple : AppColors.surface,
+              color: isCorrect ? AppColors.success : AppColors.cardLight,
               shape: BoxShape.circle,
             ),
             alignment: Alignment.center,
-            child: Text(label, style: const TextStyle(fontWeight: FontWeight.bold)),
+            child: Text(
+              label,
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 12,
+                color: isCorrect ? Colors.white : AppColors.textSecondary,
+              ),
+            ),
           ),
           const SizedBox(width: 12),
-          Expanded(child: Text(text)),
-          if (isCorrect) const Icon(Icons.check_circle, color: AppColors.purple, size: 16),
+          Expanded(
+            child: Text(
+              text,
+              style: TextStyle(
+                fontSize: 14,
+                color: isCorrect ? AppColors.success : AppColors.textPrimary,
+                fontWeight: isCorrect ? FontWeight.w700 : FontWeight.w500,
+              ),
+            ),
+          ),
+          if (isCorrect) const Icon(Icons.check_circle_rounded, color: AppColors.success, size: 18),
         ],
+      ),
+    );
+  }
+
+  Widget _buildLoadingOverlay() {
+    return Container(
+      color: Colors.white.withOpacity(0.8),
+      child: const Center(
+        child: SpinKitFadingCube(color: AppColors.primary, size: 40.0),
       ),
     );
   }

@@ -1,6 +1,8 @@
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:mcq_test_app/models/test.dart';
 import 'package:mcq_test_app/models/question.dart';
+import 'package:mcq_test_app/models/api_key.dart';
 
 class SupabaseService {
   static final SupabaseService _instance = SupabaseService._internal();
@@ -266,5 +268,29 @@ class SupabaseService {
       map[row['question_id'] as String] = row['selected_answer'] as String;
     }
     return map;
+  }
+
+  // --- API Keys ---
+  Future<List<ApiKey>> getApiKeys() async {
+    try {
+      final response = await supabase
+          .from('gemini_api_keys')
+          .select()
+          .eq('is_active', true)
+          .order('created_at', ascending: false);
+      
+      return (response as List).map((e) => ApiKey.fromMap(e)).toList();
+    } catch (e) {
+      debugPrint('Error fetching API keys: $e');
+      return [];
+    }
+  }
+
+  Future<void> addApiKey(String name, String key) async {
+    await supabase.from('gemini_api_keys').insert({
+      'name': name,
+      'api_key': key,
+      'is_active': true,
+    });
   }
 }

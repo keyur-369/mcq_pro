@@ -1,33 +1,58 @@
 import 'package:flutter/material.dart';
+import 'package:mcq_test_app/core/constants/app_colors.dart';
 
 class AppCard extends StatelessWidget {
   const AppCard({
     super.key,
     required this.child,
-    this.padding = const EdgeInsets.all(16),
-    this.onTap,
+    this.padding,
     this.margin,
+    this.onTap,
+    this.color,
   });
 
   final Widget child;
-  final EdgeInsets padding;
+  final EdgeInsetsGeometry? padding;
+  final EdgeInsetsGeometry? margin;
   final VoidCallback? onTap;
-  final EdgeInsets? margin;
+  final Color? color;
 
   @override
   Widget build(BuildContext context) {
-    final card = Card(
+    return Container(
       margin: margin,
-      child: Padding(padding: padding, child: child),
-    );
-
-    if (onTap == null) return card;
-
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(16),
-      child: card,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 20,
+            offset: const Offset(0, 10),
+            spreadRadius: -2,
+          ),
+          BoxShadow(
+            color: AppColors.primary.withOpacity(0.02),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Material(
+        color: color ?? AppColors.surface,
+        borderRadius: BorderRadius.circular(24),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(24),
+          child: Container(
+            padding: padding ?? const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(color: AppColors.border, width: 1),
+            ),
+            child: child,
+          ),
+        ),
+      ),
     );
   }
 }
-

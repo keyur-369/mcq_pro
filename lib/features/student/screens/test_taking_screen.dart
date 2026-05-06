@@ -2,6 +2,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:mcq_test_app/core/constants/app_colors.dart';
 import 'package:mcq_test_app/core/services/supabase_service.dart';
+import 'package:mcq_test_app/core/widgets/animated_page.dart';
+import 'package:mcq_test_app/core/widgets/app_gradient_background.dart';
 import 'package:mcq_test_app/models/test.dart';
 import 'package:mcq_test_app/models/question.dart';
 import 'package:mcq_test_app/features/student/screens/result_screen.dart';
@@ -43,7 +45,7 @@ class _TestTakingScreenState extends State<TestTakingScreen> with WidgetsBinding
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to load questions: $e')),
+          SnackBar(content: Text('Failed to load questions: $e'), backgroundColor: AppColors.error),
         );
         Navigator.pop(context);
       }
@@ -87,7 +89,6 @@ class _TestTakingScreenState extends State<TestTakingScreen> with WidgetsBinding
     if (_isLoading) return;
 
     setState(() => _isLoading = true);
-
     try {
       int score = 0;
       for (var q in _questions) {
@@ -118,7 +119,7 @@ class _TestTakingScreenState extends State<TestTakingScreen> with WidgetsBinding
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Submission failed: $e')),
+          SnackBar(content: Text('Submission failed: $e'), backgroundColor: AppColors.error),
         );
         setState(() => _isLoading = false);
         _startTimer(); 
@@ -128,87 +129,138 @@ class _TestTakingScreenState extends State<TestTakingScreen> with WidgetsBinding
 
   @override
   Widget build(BuildContext context) {
+    final progress = _questions.isEmpty ? 0.0 : (_currentQuestionIndex + 1) / _questions.length;
+
     return PopScope(
-      canPop: false, // Disable back button
+      canPop: false,
       onPopInvokedWithResult: (didPop, result) {
         if (!didPop) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Cannot exit test once started!')),
+            const SnackBar(content: Text('Cannot exit test once started!'), backgroundColor: AppColors.error),
           );
         }
       },
       child: Scaffold(
+        extendBodyBehindAppBar: true,
         appBar: AppBar(
           automaticallyImplyLeading: false,
-          title: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text('Q${_currentQuestionIndex + 1}/${_questions.isNotEmpty ? _questions.length : '-'}'),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                decoration: BoxDecoration(
-                  color: AppColors.orange.withOpacity(0.2),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.timer_outlined, color: AppColors.orange, size: 18),
-                    const SizedBox(width: 4),
-                    Text(
-                      _formatTime(_remainingSeconds),
-                      style: const TextStyle(color: AppColors.orange, fontWeight: FontWeight.bold),
-                    ),
-                  ],
-                ),
+          title: Text('Question ${_currentQuestionIndex + 1} of ${_questions.length}'),
+          actions: [
+            Container(
+              margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              decoration: BoxDecoration(
+                color: _remainingSeconds < 60 ? AppColors.error.withOpacity(0.1) : AppColors.cardLight,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: _remainingSeconds < 60 ? AppColors.error : AppColors.border, width: 1),
               ),
-            ],
-          ),
-        ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : Padding(
-              padding: const EdgeInsets.all(24.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+              child: Row(
                 children: [
-                  LinearProgressIndicator(
-                    value: _questions.isEmpty ? 0 : (_currentQuestionIndex + 1) / _questions.length,
-                    backgroundColor: AppColors.surface,
-                    color: AppColors.purple,
+                  Icon(
+                    Icons.timer_outlined, 
+                    color: _remainingSeconds < 60 ? AppColors.error : AppColors.primary, 
+                    size: 18
                   ),
-                  const SizedBox(height: 32),
-                  if (_questions.isNotEmpty) 
-                    Expanded(
-                      child: SingleChildScrollView(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              _questions[_currentQuestionIndex].questionText,
-                              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
-                            ),
-                            const SizedBox(height: 32),
-                            ..._buildOptions(_questions[_currentQuestionIndex]),
-                          ],
-                        ),
-                      ),
+                  const SizedBox(width: 8),
+                  Text(
+                    _formatTime(_remainingSeconds),
+                    style: TextStyle(
+                      color: _remainingSeconds < 60 ? AppColors.error : AppColors.textPrimary, 
+                      fontWeight: FontWeight.w800,
+                      fontFeatures: const [FontFeature.tabularFigures()],
                     ),
+                  ),
                 ],
               ),
             ),
-        bottomNavigationBar: Padding(
-          padding: const EdgeInsets.all(24.0),
+          ],
+        ),
+        body: AppGradientBackground(
+          child: _isLoading && _questions.isEmpty
+              ? const Center(child: CircularProgressIndicator())
+              : SafeArea(
+                  child: AnimatedPage(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(10),
+                                child: LinearProgressIndicator(
+                                  value: progress,
+                                  minHeight: 10,
+                                  backgroundColor: AppColors.cardLight,
+                                  valueColor: const AlwaysStoppedAnimation<Color>(AppColors.primary),
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                '${(progress * 100).toInt()}% completed',
+                                style: TextStyle(color: AppColors.textMuted, fontSize: 12, fontWeight: FontWeight.w600),
+                              ),
+                            ],
+                          ),
+                        ),
+                        if (_questions.isNotEmpty)
+                          Expanded(
+                            child: SingleChildScrollView(
+                              padding: const EdgeInsets.all(24),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Container(
+                                    width: double.infinity,
+                                    padding: const EdgeInsets.all(24),
+                                    decoration: BoxDecoration(
+                                      color: AppColors.surface,
+                                      borderRadius: BorderRadius.circular(24),
+                                      border: Border.all(color: AppColors.border),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: Colors.black.withOpacity(0.03),
+                                          blurRadius: 10,
+                                          offset: const Offset(0, 4),
+                                        ),
+                                      ],
+                                    ),
+                                    child: Text(
+                                      _questions[_currentQuestionIndex].questionText,
+                                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, height: 1.5, color: AppColors.textPrimary),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 32),
+                                  ..._buildOptions(_questions[_currentQuestionIndex]),
+                                ],
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+        ),
+        bottomNavigationBar: Container(
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            border: const Border(top: BorderSide(color: AppColors.border)),
+          ),
           child: Row(
             children: [
               if (_currentQuestionIndex > 0)
                 Expanded(
                   child: OutlinedButton(
                     onPressed: () => setState(() => _currentQuestionIndex--),
-                    child: const Text('Previous'),
+                    child: const Text('Back'),
                   ),
                 ),
               if (_currentQuestionIndex > 0) const SizedBox(width: 16),
               Expanded(
+                flex: 2,
                 child: ElevatedButton(
                   onPressed: _isLoading
                       ? null
@@ -219,7 +271,7 @@ class _TestTakingScreenState extends State<TestTakingScreen> with WidgetsBinding
                             _showSubmitDialog();
                           }
                         },
-                  child: Text(_currentQuestionIndex < _questions.length - 1 ? 'Next' : 'Submit'),
+                  child: Text(_currentQuestionIndex < _questions.length - 1 ? 'Next Question' : 'Finish Test'),
                 ),
               ),
             ],
@@ -233,11 +285,19 @@ class _TestTakingScreenState extends State<TestTakingScreen> with WidgetsBinding
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Submit Test'),
-        content: const Text('Are you sure you want to submit your test?'),
+        backgroundColor: AppColors.surface,
+        title: const Text('Submit Test?'),
+        content: const Text('You are about to finish the test. Are you sure you want to submit your answers?'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-          ElevatedButton(onPressed: _submitTest, child: const Text('Submit')),
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Review')),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _submitTest();
+            },
+            style: ElevatedButton.styleFrom(minimumSize: const Size(100, 45)),
+            child: const Text('Submit'),
+          ),
         ],
       ),
     );
@@ -253,32 +313,67 @@ class _TestTakingScreenState extends State<TestTakingScreen> with WidgetsBinding
     
     return options.entries.map((entry) {
       final isSelected = _selectedAnswers[question.id] == entry.key;
-      return GestureDetector(
-        onTap: () => setState(() => _selectedAnswers[question.id] = entry.key),
-        child: Container(
-          margin: const EdgeInsets.only(bottom: 16),
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: isSelected ? AppColors.purple.withOpacity(0.1) : AppColors.card,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: isSelected ? AppColors.purple : AppColors.surface,
-            ),
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 24,
-                height: 24,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  border: Border.all(color: isSelected ? AppColors.purple : Colors.grey),
-                  color: isSelected ? AppColors.purple : Colors.transparent,
-                ),
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 16),
+        child: GestureDetector(
+          onTap: () => setState(() => _selectedAnswers[question.id] = entry.key),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: isSelected ? AppColors.primarySoft : AppColors.surface,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color: isSelected ? AppColors.primary : AppColors.border,
+                width: isSelected ? 2 : 1,
               ),
-              const SizedBox(width: 16),
-              Expanded(child: Text('${entry.key}. ${entry.value}', style: const TextStyle(fontSize: 16))),
-            ],
+              boxShadow: [
+                BoxShadow(
+                  color: isSelected ? AppColors.primary.withOpacity(0.1) : Colors.black.withOpacity(0.02),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
+                )
+              ],
+            ),
+            child: Row(
+              children: [
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  width: 32,
+                  height: 32,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: isSelected ? AppColors.primary : AppColors.textMuted,
+                      width: 2,
+                    ),
+                    color: isSelected ? AppColors.primary : Colors.transparent,
+                  ),
+                  child: Center(
+                    child: Text(
+                      entry.key,
+                      style: TextStyle(
+                        color: isSelected ? Colors.white : AppColors.textMuted,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Text(
+                    entry.value,
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                      color: isSelected ? AppColors.primary : AppColors.textPrimary,
+                    ),
+                  ),
+                ),
+                if (isSelected)
+                  const Icon(Icons.check_circle_rounded, color: AppColors.primary, size: 24),
+              ],
+            ),
           ),
         ),
       );
