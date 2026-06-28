@@ -94,8 +94,8 @@ class _SignupScreenState extends State<SignupScreen> {
                   Text(
                     'Join and start your learning journey',
                     style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                          color: AppColors.textSecondary,
-                        ),
+                      color: AppColors.textSecondary,
+                    ),
                   ),
                   const SizedBox(height: 32),
                   AppCard(
@@ -141,28 +141,62 @@ class _SignupScreenState extends State<SignupScreen> {
                             Expanded(
                               child: DropdownButtonFormField<String>(
                                 value: selectedClass,
+                                dropdownColor: AppColors.surface,
+                                style: const TextStyle(
+                                  color: AppColors.textPrimary,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w500,
+                                ),
                                 decoration: const InputDecoration(
                                   hintText: 'Class',
                                   prefixIcon: Icon(Icons.school_outlined),
                                 ),
                                 items: ['11', '12']
-                                    .map((e) => DropdownMenuItem(value: e, child: Text(e)))
+                                    .map(
+                                      (e) => DropdownMenuItem(
+                                        value: e,
+                                        child: Text(
+                                          e,
+                                          style: const TextStyle(
+                                            color: AppColors.textPrimary,
+                                          ),
+                                        ),
+                                      ),
+                                    )
                                     .toList(),
-                                onChanged: (val) => setState(() => selectedClass = val!),
+                                onChanged: (val) =>
+                                    setState(() => selectedClass = val!),
                               ),
                             ),
                             const SizedBox(width: 12),
                             Expanded(
                               child: DropdownButtonFormField<String>(
                                 value: selectedDivision,
+                                dropdownColor: AppColors.surface,
+                                style: const TextStyle(
+                                  color: AppColors.textPrimary,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w500,
+                                ),
                                 decoration: const InputDecoration(
                                   hintText: 'Division',
                                   prefixIcon: Icon(Icons.groups_outlined),
                                 ),
                                 items: ['A', 'B']
-                                    .map((e) => DropdownMenuItem(value: e, child: Text(e)))
+                                    .map(
+                                      (e) => DropdownMenuItem(
+                                        value: e,
+                                        child: Text(
+                                          e,
+                                          style: const TextStyle(
+                                            color: AppColors.textPrimary,
+                                          ),
+                                        ),
+                                      ),
+                                    )
                                     .toList(),
-                                onChanged: (val) => setState(() => selectedDivision = val!),
+                                onChanged: (val) =>
+                                    setState(() => selectedDivision = val!),
                               ),
                             ),
                           ],
@@ -170,14 +204,31 @@ class _SignupScreenState extends State<SignupScreen> {
                         const SizedBox(height: 16),
                         DropdownButtonFormField<String>(
                           value: selectedGroup,
+                          dropdownColor: AppColors.surface,
+                          style: const TextStyle(
+                            color: AppColors.textPrimary,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w500,
+                          ),
                           decoration: const InputDecoration(
                             hintText: 'Select Group',
                             prefixIcon: Icon(Icons.science_outlined),
                           ),
                           items: ['Biology', 'Maths']
-                              .map((e) => DropdownMenuItem(value: e, child: Text(e)))
+                              .map(
+                                (e) => DropdownMenuItem(
+                                  value: e,
+                                  child: Text(
+                                    e,
+                                    style: const TextStyle(
+                                      color: AppColors.textPrimary,
+                                    ),
+                                  ),
+                                ),
+                              )
                               .toList(),
-                          onChanged: (val) => setState(() => selectedGroup = val),
+                          onChanged: (val) =>
+                              setState(() => selectedGroup = val),
                         ),
                         const SizedBox(height: 32),
                         SizedBox(
@@ -185,7 +236,10 @@ class _SignupScreenState extends State<SignupScreen> {
                           child: ElevatedButton(
                             onPressed: _isLoading ? null : _signup,
                             child: _isLoading
-                                ? const SpinKitThreeBounce(color: Colors.white, size: 20)
+                                ? const SpinKitThreeBounce(
+                                    color: Colors.white,
+                                    size: 20,
+                                  )
                                 : const Text('Create Account'),
                           ),
                         ),
@@ -199,7 +253,10 @@ class _SignupScreenState extends State<SignupScreen> {
                       child: RichText(
                         text: TextSpan(
                           text: "Already have an account? ",
-                          style: TextStyle(color: AppColors.textSecondary, fontFamily: GoogleFonts.outfit().fontFamily),
+                          style: TextStyle(
+                            color: AppColors.textSecondary,
+                            fontFamily: GoogleFonts.outfit().fontFamily,
+                          ),
                           children: [
                             TextSpan(
                               text: "Sign In",

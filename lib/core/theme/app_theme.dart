@@ -5,7 +5,7 @@ import 'package:mcq_test_app/core/constants/app_colors.dart';
 class AppTheme {
   static ThemeData get lightTheme {
     final baseTheme = ThemeData.light(useMaterial3: true);
-    
+
     return baseTheme.copyWith(
       scaffoldBackgroundColor: AppColors.background,
       canvasColor: AppColors.surface,
@@ -45,19 +45,48 @@ class AppTheme {
       ),
       textTheme: GoogleFonts.outfitTextTheme(
         const TextTheme(
-          displayLarge: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w800, letterSpacing: -1),
-          headlineLarge: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w800, letterSpacing: -1),
-          headlineMedium: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w700, letterSpacing: -0.5),
-          titleLarge: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w600),
-          bodyLarge: TextStyle(color: AppColors.textPrimary, fontSize: 16, fontWeight: FontWeight.w500),
-          bodyMedium: TextStyle(color: AppColors.textSecondary, fontSize: 14, fontWeight: FontWeight.w500),
-          labelLarge: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w600),
+          displayLarge: TextStyle(
+            color: AppColors.textPrimary,
+            fontWeight: FontWeight.w800,
+            letterSpacing: -1,
+          ),
+          headlineLarge: TextStyle(
+            color: AppColors.textPrimary,
+            fontWeight: FontWeight.w800,
+            letterSpacing: -1,
+          ),
+          headlineMedium: TextStyle(
+            color: AppColors.textPrimary,
+            fontWeight: FontWeight.w700,
+            letterSpacing: -0.5,
+          ),
+          titleLarge: TextStyle(
+            color: AppColors.textPrimary,
+            fontWeight: FontWeight.w600,
+          ),
+          bodyLarge: TextStyle(
+            color: AppColors.textPrimary,
+            fontSize: 16,
+            fontWeight: FontWeight.w500,
+          ),
+          bodyMedium: TextStyle(
+            color: AppColors.textSecondary,
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+          ),
+          labelLarge: TextStyle(
+            color: AppColors.textPrimary,
+            fontWeight: FontWeight.w600,
+          ),
         ),
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: AppColors.cardLight,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 20,
+          vertical: 18,
+        ),
         hintStyle: const TextStyle(color: AppColors.textMuted, fontSize: 15),
         prefixIconColor: AppColors.textSecondary,
         suffixIconColor: AppColors.textSecondary,
@@ -155,5 +184,6 @@ class AppTheme {
     );
   }
 
-  static ThemeData get darkTheme => lightTheme; // Default to light theme for now
+  static ThemeData get darkTheme =>
+      lightTheme; // Default to light theme for now
 }

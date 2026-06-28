@@ -1,4 +1,4 @@
-package com.example.mcq_test_app
+package com.mcqpro.app
 
 import io.flutter.embedding.android.FlutterActivity
 

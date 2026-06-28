@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:math';
 import 'package:file_picker/file_picker.dart';
@@ -39,6 +40,9 @@ class _CreateTestScreenState extends ConsumerState<CreateTestScreen> {
   final _mcqCountController = TextEditingController(text: '10');
   final _durationController = TextEditingController(text: '30');
   bool _isLoading = false;
+  double _generationProgress = 0.0;
+  int _targetQuestionCount = 0;
+  Timer? _progressTimer;
 
   List<String> _getAvailableSubjects(String? level) {
     if (level == 'NEET') return ['Physics', 'Chemistry', 'Biology'];
@@ -76,10 +80,18 @@ class _CreateTestScreenState extends ConsumerState<CreateTestScreen> {
     final count = int.tryParse(_mcqCountController.text) ?? 10;
     final duration = int.tryParse(_durationController.text) ?? 30;
 
-    setState(() => _isLoading = true);
+    setState(() {
+      _isLoading = true;
+      _targetQuestionCount = count;
+      _generationProgress = 0.0;
+    });
+    _startProgressSimulation();
     try {
-      if (genMode == GenerationMode.topic && _topicController.text.trim().isEmpty) throw 'Please enter a topic';
-      if (genMode == GenerationMode.pdf && selectedPdf == null) throw 'Please select a PDF file first';
+      if (genMode == GenerationMode.topic &&
+          _topicController.text.trim().isEmpty)
+        throw 'Please enter a topic';
+      if (genMode == GenerationMode.pdf && selectedPdf == null)
+        throw 'Please select a PDF file first';
 
       final test = Test(
         teacherId: SupabaseService().currentUser?.id ?? '',
@@ -87,14 +99,17 @@ class _CreateTestScreenState extends ConsumerState<CreateTestScreen> {
         studentClass: selectedClass ?? '11',
         medium: selectedMedium?.toLowerCase() ?? 'english',
         subject: selectedSubject ?? 'Physics',
-        topic: genMode == GenerationMode.pdf ? _topicHintController.text : _topicController.text,
+        topic: genMode == GenerationMode.pdf
+            ? _topicHintController.text
+            : _topicController.text,
         level: selectedLevel?.split(' / ').first.toLowerCase() ?? 'boards',
         duration: duration,
         status: TestStatus.draft,
       );
 
       final selectedKey = ref.read(selectedApiKeyProvider);
-      if (selectedKey == null) throw 'Please select an AI API key on the dashboard first';
+      if (selectedKey == null)
+        throw 'Please select an AI API key on the dashboard first';
 
       List<Question> questions;
       if (genMode == GenerationMode.pdf) {
@@ -122,20 +137,55 @@ class _CreateTestScreenState extends ConsumerState<CreateTestScreen> {
         );
       }
 
+      _stopProgressSimulation(complete: true);
       if (mounted) {
         Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (_) => QuestionPreviewScreen(test: test, questions: questions),
+            builder: (_) =>
+                QuestionPreviewScreen(test: test, questions: questions),
           ),
         );
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e'), backgroundColor: AppColors.error));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: $e'),
+            backgroundColor: AppColors.error,
+          ),
+        );
       }
     } finally {
+      _stopProgressSimulation();
       if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  void _startProgressSimulation() {
+    _progressTimer?.cancel();
+    _progressTimer = Timer.periodic(const Duration(milliseconds: 200), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      setState(() {
+        if (_generationProgress < 0.7) {
+          _generationProgress += 0.025;
+        } else if (_generationProgress < 0.9) {
+          _generationProgress += 0.01;
+        } else if (_generationProgress < 0.95) {
+          _generationProgress += 0.004;
+        }
+      });
+    });
+  }
+
+  void _stopProgressSimulation({bool complete = false}) {
+    _progressTimer?.cancel();
+    _progressTimer = null;
+    if (complete && mounted) {
+      setState(() => _generationProgress = 1.0);
     }
   }
 
@@ -170,7 +220,10 @@ class _CreateTestScreenState extends ConsumerState<CreateTestScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            if (_currentStep == 0) _buildStepOne() else _buildStepTwo(),
+                            if (_currentStep == 0)
+                              _buildStepOne()
+                            else
+                              _buildStepTwo(),
                             const SizedBox(height: 32),
                             _buildNavigationButtons(),
                           ],
@@ -194,7 +247,12 @@ class _CreateTestScreenState extends ConsumerState<CreateTestScreen> {
       child: Row(
         children: [
           _buildStepIndicator(0, 'Configure', Icons.settings_rounded),
-          Expanded(child: Container(height: 2, color: _currentStep == 1 ? AppColors.primary : AppColors.border)),
+          Expanded(
+            child: Container(
+              height: 2,
+              color: _currentStep == 1 ? AppColors.primary : AppColors.border,
+            ),
+          ),
           _buildStepIndicator(1, 'Generate', Icons.auto_awesome_rounded),
         ],
       ),
@@ -213,9 +271,22 @@ class _CreateTestScreenState extends ConsumerState<CreateTestScreen> {
           height: 44,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
-            color: isActive || isCompleted ? AppColors.primary : AppColors.cardLight,
-            border: Border.all(color: isActive ? AppColors.primary : AppColors.border, width: 2),
-            boxShadow: isActive ? [BoxShadow(color: AppColors.primary.withOpacity(0.3), blurRadius: 10, offset: const Offset(0, 4))] : [],
+            color: isActive || isCompleted
+                ? AppColors.primary
+                : AppColors.cardLight,
+            border: Border.all(
+              color: isActive ? AppColors.primary : AppColors.border,
+              width: 2,
+            ),
+            boxShadow: isActive
+                ? [
+                    BoxShadow(
+                      color: AppColors.primary.withOpacity(0.3),
+                      blurRadius: 10,
+                      offset: const Offset(0, 4),
+                    ),
+                  ]
+                : [],
           ),
           child: Icon(
             isCompleted ? Icons.check_rounded : icon,
@@ -245,9 +316,19 @@ class _CreateTestScreenState extends ConsumerState<CreateTestScreen> {
         AppCard(
           child: Column(
             children: [
-              _buildChoiceGroup('Standard', ['11', '12'], selectedClass, (val) => setState(() => selectedClass = val)),
+              _buildChoiceGroup(
+                'Standard',
+                ['11', '12'],
+                selectedClass,
+                (val) => setState(() => selectedClass = val),
+              ),
               const Divider(height: 32),
-              _buildChoiceGroup('Medium', ['English', 'Gujarati'], selectedMedium, (val) => setState(() => selectedMedium = val)),
+              _buildChoiceGroup(
+                'Medium',
+                ['English', 'Gujarati'],
+                selectedMedium,
+                (val) => setState(() => selectedMedium = val),
+              ),
             ],
           ),
         ),
@@ -269,9 +350,16 @@ class _CreateTestScreenState extends ConsumerState<CreateTestScreen> {
               DropdownButtonFormField<String>(
                 value: selectedSubject,
                 dropdownColor: AppColors.surface,
-                style: const TextStyle(color: AppColors.textPrimary, fontSize: 16, fontWeight: FontWeight.w500),
+                style: const TextStyle(
+                  color: AppColors.textPrimary,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w500,
+                ),
                 decoration: InputDecoration(
-                  prefixIcon: Icon(Icons.book_rounded, color: AppColors.primary.withOpacity(0.7)),
+                  prefixIcon: Icon(
+                    Icons.book_rounded,
+                    color: AppColors.primary.withOpacity(0.7),
+                  ),
                   filled: true,
                   fillColor: AppColors.background,
                 ),
@@ -291,7 +379,10 @@ class _CreateTestScreenState extends ConsumerState<CreateTestScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _buildSectionTitle('Source Material', 'How should AI generate questions?'),
+        _buildSectionTitle(
+          'Source Material',
+          'How should AI generate questions?',
+        ),
         const SizedBox(height: 16),
         AppCard(
           child: Column(
@@ -301,7 +392,11 @@ class _CreateTestScreenState extends ConsumerState<CreateTestScreen> {
               _buildSegmentedButton(
                 ['By Topic', 'By PDF'],
                 genMode == GenerationMode.topic ? 'By Topic' : 'By PDF',
-                (val) => setState(() => genMode = val == 'By Topic' ? GenerationMode.topic : GenerationMode.pdf),
+                (val) => setState(
+                  () => genMode = val == 'By Topic'
+                      ? GenerationMode.topic
+                      : GenerationMode.pdf,
+                ),
               ),
               const SizedBox(height: 24),
               if (genMode == GenerationMode.topic) ...[
@@ -378,12 +473,32 @@ class _CreateTestScreenState extends ConsumerState<CreateTestScreen> {
               DropdownButtonFormField<String>(
                 value: selectedModel,
                 dropdownColor: AppColors.surface,
-                style: const TextStyle(color: AppColors.textPrimary, fontSize: 16, fontWeight: FontWeight.w500),
-                decoration: const InputDecoration(prefixIcon: Icon(Icons.psychology_rounded)),
-                items: [
-                  {'name': 'Gemini 2.5 Flash (Fast)', 'id': 'gemini-2.5-flash'},
-                  {'name': 'Gemini 2.5 Flash Lite (Light)', 'id': 'gemini-2.5-flash-lite'},
-                ].map((e) => DropdownMenuItem(value: e['id'], child: Text(e['name']!))).toList(),
+                style: const TextStyle(
+                  color: AppColors.textPrimary,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w500,
+                ),
+                decoration: const InputDecoration(
+                  prefixIcon: Icon(Icons.psychology_rounded),
+                ),
+                items:
+                    [
+                          {
+                            'name': 'Gemini 2.5 Flash (Fast)',
+                            'id': 'gemini-2.5-flash',
+                          },
+                          {
+                            'name': 'Gemini 2.5 Flash Lite (Light)',
+                            'id': 'gemini-2.5-flash-lite',
+                          },
+                        ]
+                        .map(
+                          (e) => DropdownMenuItem(
+                            value: e['id'],
+                            child: Text(e['name']!),
+                          ),
+                        )
+                        .toList(),
                 onChanged: (val) => setState(() => selectedModel = val!),
               ),
             ],
@@ -401,7 +516,9 @@ class _CreateTestScreenState extends ConsumerState<CreateTestScreen> {
         duration: const Duration(milliseconds: 300),
         padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
-          color: selectedPdf != null ? AppColors.primarySoft : AppColors.background,
+          color: selectedPdf != null
+              ? AppColors.primarySoft
+              : AppColors.background,
           borderRadius: BorderRadius.circular(18),
           border: Border.all(
             color: selectedPdf != null ? AppColors.primary : AppColors.border,
@@ -413,7 +530,9 @@ class _CreateTestScreenState extends ConsumerState<CreateTestScreen> {
             Container(
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: selectedPdf != null ? AppColors.primary : AppColors.textMuted.withOpacity(0.1),
+                color: selectedPdf != null
+                    ? AppColors.primary
+                    : AppColors.textMuted.withOpacity(0.1),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Icon(
@@ -429,8 +548,12 @@ class _CreateTestScreenState extends ConsumerState<CreateTestScreen> {
                   Text(
                     selectedPdf?.name ?? 'Select PDF File',
                     style: TextStyle(
-                      color: selectedPdf != null ? AppColors.textPrimary : AppColors.textMuted,
-                      fontWeight: selectedPdf != null ? FontWeight.bold : FontWeight.w500,
+                      color: selectedPdf != null
+                          ? AppColors.textPrimary
+                          : AppColors.textMuted,
+                      fontWeight: selectedPdf != null
+                          ? FontWeight.bold
+                          : FontWeight.w500,
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -438,12 +561,16 @@ class _CreateTestScreenState extends ConsumerState<CreateTestScreen> {
                   if (selectedPdf != null)
                     Text(
                       '${(selectedPdf!.size / 1024 / 1024).toStringAsFixed(2)} MB',
-                      style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
+                      style: TextStyle(
+                        color: AppColors.textSecondary,
+                        fontSize: 12,
+                      ),
                     ),
                 ],
               ),
             ),
-            if (selectedPdf != null) const Icon(Icons.check_circle_rounded, color: AppColors.primary),
+            if (selectedPdf != null)
+              const Icon(Icons.check_circle_rounded, color: AppColors.primary),
           ],
         ),
       ),
@@ -464,13 +591,20 @@ class _CreateTestScreenState extends ConsumerState<CreateTestScreen> {
         Expanded(
           flex: 2,
           child: ElevatedButton(
-            onPressed: _currentStep == 0 ? () => setState(() => _currentStep = 1) : _generateQuestions,
+            onPressed: _currentStep == 0
+                ? () => setState(() => _currentStep = 1)
+                : _generateQuestions,
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Text(_currentStep == 0 ? 'Continue' : 'Generate Test'),
                 const SizedBox(width: 8),
-                Icon(_currentStep == 0 ? Icons.arrow_forward_rounded : Icons.auto_awesome_rounded, size: 18),
+                Icon(
+                  _currentStep == 0
+                      ? Icons.arrow_forward_rounded
+                      : Icons.auto_awesome_rounded,
+                  size: 18,
+                ),
               ],
             ),
           ),
@@ -480,6 +614,11 @@ class _CreateTestScreenState extends ConsumerState<CreateTestScreen> {
   }
 
   Widget _buildLoadingOverlay() {
+    final percent = (_generationProgress * 100).round().clamp(0, 100);
+    final generated = (_generationProgress * _targetQuestionCount)
+        .round()
+        .clamp(0, _targetQuestionCount);
+
     return Container(
       color: Colors.white.withOpacity(0.9),
       child: Center(
@@ -490,12 +629,52 @@ class _CreateTestScreenState extends ConsumerState<CreateTestScreen> {
             const SizedBox(height: 32),
             Text(
               'AI is crafting your questions...',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: AppColors.textPrimary,
+              ),
             ),
             const SizedBox(height: 8),
             Text(
               'Analyzing source material and formatting options',
               style: TextStyle(color: AppColors.textSecondary),
+            ),
+            const SizedBox(height: 28),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 48),
+              child: Column(
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: LinearProgressIndicator(
+                      value: _generationProgress,
+                      minHeight: 8,
+                      backgroundColor: AppColors.border,
+                      valueColor: const AlwaysStoppedAnimation<Color>(
+                        AppColors.primary,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    '$percent%',
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.primary,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '$generated of $_targetQuestionCount questions generated',
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ],
         ),
@@ -507,8 +686,18 @@ class _CreateTestScreenState extends ConsumerState<CreateTestScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(title, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900, letterSpacing: -0.5)),
-        Text(subtitle, style: TextStyle(color: AppColors.textSecondary, fontSize: 14)),
+        Text(
+          title,
+          style: const TextStyle(
+            fontSize: 22,
+            fontWeight: FontWeight.w900,
+            letterSpacing: -0.5,
+          ),
+        ),
+        Text(
+          subtitle,
+          style: TextStyle(color: AppColors.textSecondary, fontSize: 14),
+        ),
       ],
     );
   }
@@ -518,15 +707,27 @@ class _CreateTestScreenState extends ConsumerState<CreateTestScreen> {
       padding: const EdgeInsets.only(bottom: 8, left: 4),
       child: Text(
         text,
-        style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.textSecondary, fontSize: 13),
+        style: const TextStyle(
+          fontWeight: FontWeight.bold,
+          color: AppColors.textSecondary,
+          fontSize: 13,
+        ),
       ),
     );
   }
 
-  Widget _buildChoiceGroup(String label, List<String> options, String? selected, Function(String) onSelect) {
+  Widget _buildChoiceGroup(
+    String label,
+    List<String> options,
+    String? selected,
+    Function(String) onSelect,
+  ) {
     return Row(
       children: [
-        Text(label, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+        Text(
+          label,
+          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+        ),
         const Spacer(),
         Wrap(
           spacing: 8,
@@ -544,7 +745,11 @@ class _CreateTestScreenState extends ConsumerState<CreateTestScreen> {
     );
   }
 
-  Widget _buildSegmentedButton(List<String> options, String? selected, Function(String) onSelect) {
+  Widget _buildSegmentedButton(
+    List<String> options,
+    String? selected,
+    Function(String) onSelect,
+  ) {
     return Container(
       decoration: BoxDecoration(
         color: AppColors.cardLight,
@@ -562,9 +767,19 @@ class _CreateTestScreenState extends ConsumerState<CreateTestScreen> {
                 duration: const Duration(milliseconds: 250),
                 padding: const EdgeInsets.symmetric(vertical: 12),
                 decoration: BoxDecoration(
-                  gradient: isSelected ? const LinearGradient(colors: AppColors.primaryGradient) : null,
+                  gradient: isSelected
+                      ? const LinearGradient(colors: AppColors.primaryGradient)
+                      : null,
                   borderRadius: BorderRadius.circular(12),
-                  boxShadow: isSelected ? [BoxShadow(color: AppColors.primary.withOpacity(0.3), blurRadius: 4, offset: const Offset(0, 2))] : [],
+                  boxShadow: isSelected
+                      ? [
+                          BoxShadow(
+                            color: AppColors.primary.withOpacity(0.3),
+                            blurRadius: 4,
+                            offset: const Offset(0, 2),
+                          ),
+                        ]
+                      : [],
                 ),
                 alignment: Alignment.center,
                 child: Text(
@@ -584,6 +799,7 @@ class _CreateTestScreenState extends ConsumerState<CreateTestScreen> {
 
   @override
   void dispose() {
+    _progressTimer?.cancel();
     _topicController.dispose();
     _topicHintController.dispose();
     _mcqCountController.dispose();

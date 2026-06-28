@@ -50,7 +50,12 @@ class _TeacherResultsScreenState extends State<TeacherResultsScreen> {
                     return const Center(child: CircularProgressIndicator());
                   }
                   if (snapshot.hasError) {
-                    return Center(child: Text('Error: ${snapshot.error}', style: const TextStyle(color: AppColors.error)));
+                    return Center(
+                      child: Text(
+                        'Error: ${snapshot.error}',
+                        style: const TextStyle(color: AppColors.error),
+                      ),
+                    );
                   }
 
                   final allAttempts = snapshot.data ?? [];
@@ -58,13 +63,21 @@ class _TeacherResultsScreenState extends State<TeacherResultsScreen> {
                     final userData = attempt['users'];
                     if (userData == null) return false;
 
-                    final studentName = (userData['name'] ?? userData['email'] ?? '').toString().toLowerCase();
+                    final studentName =
+                        (userData['name'] ?? userData['email'] ?? '')
+                            .toString()
+                            .toLowerCase();
                     final studentClass = (userData['class'] ?? '').toString();
-                    final studentGroup = (userData['student_group'] ?? '').toString();
+                    final studentGroup = (userData['student_group'] ?? '')
+                        .toString();
 
                     final matchesSearch = studentName.contains(_searchQuery);
-                    final matchesClass = _selectedClass == 'All' || studentClass == _selectedClass;
-                    final matchesGroup = _selectedGroup == 'All' || studentGroup == _selectedGroup;
+                    final matchesClass =
+                        _selectedClass == 'All' ||
+                        studentClass == _selectedClass;
+                    final matchesGroup =
+                        _selectedGroup == 'All' ||
+                        studentGroup == _selectedGroup;
 
                     return matchesSearch && matchesClass && matchesGroup;
                   }).toList();
@@ -74,13 +87,22 @@ class _TeacherResultsScreenState extends State<TeacherResultsScreen> {
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Icon(Icons.search_off_rounded, size: 80, color: AppColors.textMuted.withOpacity(0.2)),
+                          Icon(
+                            Icons.search_off_rounded,
+                            size: 80,
+                            color: AppColors.textMuted.withOpacity(0.2),
+                          ),
                           const SizedBox(height: 16),
                           Text(
-                            _searchQuery.isEmpty && _selectedClass == 'All' && _selectedGroup == 'All'
+                            _searchQuery.isEmpty &&
+                                    _selectedClass == 'All' &&
+                                    _selectedGroup == 'All'
                                 ? 'No student attempts yet'
                                 : 'No matching results found',
-                            style: const TextStyle(color: AppColors.textMuted, fontSize: 16),
+                            style: const TextStyle(
+                              color: AppColors.textMuted,
+                              fontSize: 16,
+                            ),
                           ),
                         ],
                       ),
@@ -113,7 +135,8 @@ class _TeacherResultsScreenState extends State<TeacherResultsScreen> {
         children: [
           TextField(
             controller: _searchController,
-            onChanged: (val) => setState(() => _searchQuery = val.toLowerCase()),
+            onChanged: (val) =>
+                setState(() => _searchQuery = val.toLowerCase()),
             decoration: InputDecoration(
               hintText: 'Search student name...',
               prefixIcon: const Icon(Icons.search_rounded),
@@ -143,10 +166,25 @@ class _TeacherResultsScreenState extends State<TeacherResultsScreen> {
                     child: DropdownButton<String>(
                       value: _selectedClass,
                       isExpanded: true,
-                      style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.textPrimary, fontSize: 13),
-                      icon: const Icon(Icons.filter_list_rounded, size: 18, color: AppColors.primary),
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.textPrimary,
+                        fontSize: 13,
+                      ),
+                      icon: const Icon(
+                        Icons.filter_list_rounded,
+                        size: 18,
+                        color: AppColors.primary,
+                      ),
                       items: ['All', '11', '12']
-                          .map((e) => DropdownMenuItem(value: e, child: Text(e == 'All' ? 'All Classes' : 'Class $e')))
+                          .map(
+                            (e) => DropdownMenuItem(
+                              value: e,
+                              child: Text(
+                                e == 'All' ? 'All Classes' : 'Class $e',
+                              ),
+                            ),
+                          )
                           .toList(),
                       onChanged: (val) => setState(() => _selectedClass = val!),
                     ),
@@ -166,10 +204,23 @@ class _TeacherResultsScreenState extends State<TeacherResultsScreen> {
                     child: DropdownButton<String>(
                       value: _selectedGroup,
                       isExpanded: true,
-                      style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.textPrimary, fontSize: 13),
-                      icon: const Icon(Icons.science_rounded, size: 18, color: AppColors.primary),
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.textPrimary,
+                        fontSize: 13,
+                      ),
+                      icon: const Icon(
+                        Icons.science_rounded,
+                        size: 18,
+                        color: AppColors.primary,
+                      ),
                       items: ['All', 'Biology', 'Maths']
-                          .map((e) => DropdownMenuItem(value: e, child: Text(e == 'All' ? 'All Groups' : e)))
+                          .map(
+                            (e) => DropdownMenuItem(
+                              value: e,
+                              child: Text(e == 'All' ? 'All Groups' : e),
+                            ),
+                          )
                           .toList(),
                       onChanged: (val) => setState(() => _selectedGroup = val!),
                     ),
@@ -194,7 +245,9 @@ class _TeacherResultsScreenState extends State<TeacherResultsScreen> {
     final topic = testData['topic'] as String? ?? 'Unknown Topic';
     final score = attempt['score'] as int? ?? 0;
     final submittedAtStr = attempt['submitted_at'] as String?;
-    final studentDisplayName = userData != null ? (userData['name'] ?? userData['email'] ?? 'Unknown') : 'Unknown';
+    final studentDisplayName = userData != null
+        ? (userData['name'] ?? userData['email'] ?? 'Unknown')
+        : 'Unknown';
 
     DateTime? submittedAt;
     if (submittedAtStr != null) submittedAt = DateTime.tryParse(submittedAtStr);
@@ -208,7 +261,11 @@ class _TeacherResultsScreenState extends State<TeacherResultsScreen> {
               color: AppColors.primarySoft,
               borderRadius: BorderRadius.circular(14),
             ),
-            child: const Icon(Icons.person_rounded, color: AppColors.primary, size: 24),
+            child: const Icon(
+              Icons.person_rounded,
+              color: AppColors.primary,
+              size: 24,
+            ),
           ),
           const SizedBox(width: 16),
           Expanded(
@@ -217,12 +274,19 @@ class _TeacherResultsScreenState extends State<TeacherResultsScreen> {
               children: [
                 Text(
                   studentDisplayName,
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: AppColors.textPrimary),
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                    color: AppColors.textPrimary,
+                  ),
                 ),
                 const SizedBox(height: 4),
                 Text(
                   '$subject: $topic',
-                  style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
+                  style: TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 13,
+                  ),
                 ),
                 if (submittedAt != null)
                   Text(
@@ -238,7 +302,9 @@ class _TeacherResultsScreenState extends State<TeacherResultsScreen> {
               Text(
                 '$score%',
                 style: TextStyle(
-                  color: score >= 80 ? AppColors.success : (score >= 50 ? AppColors.primary : AppColors.error),
+                  color: score >= 80
+                      ? AppColors.success
+                      : (score >= 50 ? AppColors.primary : AppColors.error),
                   fontWeight: FontWeight.w900,
                   fontSize: 20,
                 ),
@@ -247,11 +313,15 @@ class _TeacherResultsScreenState extends State<TeacherResultsScreen> {
               SizedBox(
                 height: 32,
                 child: ElevatedButton(
-                  onPressed: () => _openResultPreview(context, attemptId, testId, score),
+                  onPressed: () =>
+                      _openResultPreview(context, attemptId, testId, score),
                   style: ElevatedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(horizontal: 12),
                     minimumSize: const Size(0, 32),
-                    textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                    textStyle: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                   child: const Text('View'),
                 ),
@@ -263,7 +333,12 @@ class _TeacherResultsScreenState extends State<TeacherResultsScreen> {
     );
   }
 
-  void _openResultPreview(BuildContext context, String attemptId, String testId, int score) async {
+  void _openResultPreview(
+    BuildContext context,
+    String attemptId,
+    String testId,
+    int score,
+  ) async {
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -293,7 +368,10 @@ class _TeacherResultsScreenState extends State<TeacherResultsScreen> {
       if (context.mounted) {
         Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to load: $e'), backgroundColor: AppColors.error),
+          SnackBar(
+            content: Text('Failed to load: $e'),
+            backgroundColor: AppColors.error,
+          ),
         );
       }
     }
