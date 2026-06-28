@@ -99,7 +99,9 @@ class _StudentDashboardState extends State<StudentDashboard> {
     return Scaffold(
       extendBodyBehindAppBar: true,
       appBar: AppBar(
-        title: const Text('Dashboard'),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        title: const SizedBox.shrink(),
         actions: [
           IconButton(
             onPressed: () async {

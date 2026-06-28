@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:io';
 import 'dart:math';
 import 'package:file_picker/file_picker.dart';
@@ -25,7 +24,8 @@ class CreateTestScreen extends ConsumerStatefulWidget {
   ConsumerState<CreateTestScreen> createState() => _CreateTestScreenState();
 }
 
-class _CreateTestScreenState extends ConsumerState<CreateTestScreen> {
+class _CreateTestScreenState extends ConsumerState<CreateTestScreen>
+    with TickerProviderStateMixin {
   int _currentStep = 0;
   String? selectedClass = '11';
   String? selectedMedium = 'English';
@@ -39,10 +39,31 @@ class _CreateTestScreenState extends ConsumerState<CreateTestScreen> {
   final _topicHintController = TextEditingController();
   final _mcqCountController = TextEditingController(text: '10');
   final _durationController = TextEditingController(text: '30');
+
   bool _isLoading = false;
-  double _generationProgress = 0.0;
-  int _targetQuestionCount = 0;
-  Timer? _progressTimer;
+
+  // ── Real progress state ──────────────────────────────────────────────────
+  int _generatedCount = 0;   // actual questions generated so far
+  int _targetCount = 0;      // total requested
+
+  // ── Animation controllers ────────────────────────────────────────────────
+  late AnimationController _pulseController;
+  late Animation<double> _pulseAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _pulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    )..repeat(reverse: true);
+
+    _pulseAnimation = Tween<double>(begin: 0.85, end: 1.0).animate(
+      CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
+    );
+  }
+
+  // ── Helpers ──────────────────────────────────────────────────────────────
 
   List<String> _getAvailableSubjects(String? level) {
     if (level == 'NEET') return ['Physics', 'Chemistry', 'Biology'];
@@ -76,22 +97,31 @@ class _CreateTestScreenState extends ConsumerState<CreateTestScreen> {
     if (result != null) setState(() => selectedPdf = result.files.first);
   }
 
+  Future<List<int>> _readFileBytes(PlatformFile file) async {
+    if (file.bytes != null) return file.bytes!;
+    if (file.path != null) return await File(file.path!).readAsBytes();
+    throw 'Could not read file data';
+  }
+
+  // ── Generation ───────────────────────────────────────────────────────────
+
   void _generateQuestions() async {
     final count = int.tryParse(_mcqCountController.text) ?? 10;
     final duration = int.tryParse(_durationController.text) ?? 30;
 
     setState(() {
       _isLoading = true;
-      _targetQuestionCount = count;
-      _generationProgress = 0.0;
+      _targetCount = count;
+      _generatedCount = 0;
     });
-    _startProgressSimulation();
+
     try {
-      if (genMode == GenerationMode.topic &&
-          _topicController.text.trim().isEmpty)
+      if (genMode == GenerationMode.topic && _topicController.text.trim().isEmpty) {
         throw 'Please enter a topic';
-      if (genMode == GenerationMode.pdf && selectedPdf == null)
+      }
+      if (genMode == GenerationMode.pdf && selectedPdf == null) {
         throw 'Please select a PDF file first';
+      }
 
       final test = Test(
         teacherId: SupabaseService().currentUser?.id ?? '',
@@ -108,8 +138,16 @@ class _CreateTestScreenState extends ConsumerState<CreateTestScreen> {
       );
 
       final selectedKey = ref.read(selectedApiKeyProvider);
-      if (selectedKey == null)
+      if (selectedKey == null) {
         throw 'Please select an AI API key on the dashboard first';
+      }
+
+      // onProgress: called each time a batch finishes with actual count
+      void onProgress(int generatedSoFar) {
+        if (mounted) {
+          setState(() => _generatedCount = generatedSoFar);
+        }
+      }
 
       List<Question> questions;
       if (genMode == GenerationMode.pdf) {
@@ -123,6 +161,7 @@ class _CreateTestScreenState extends ConsumerState<CreateTestScreen> {
           pdfBytes: await _readFileBytes(selectedPdf!),
           apiKey: selectedKey.key,
           modelName: selectedModel,
+          onProgress: onProgress,
         );
       } else {
         questions = await AiGeneratorService().generateQuestions(
@@ -134,66 +173,35 @@ class _CreateTestScreenState extends ConsumerState<CreateTestScreen> {
           medium: test.medium,
           apiKey: selectedKey.key,
           modelName: selectedModel,
+          onProgress: onProgress,
         );
       }
 
-      _stopProgressSimulation(complete: true);
+      // Snap to full before navigating
+      if (mounted) setState(() => _generatedCount = questions.length);
+
+      await Future.delayed(const Duration(milliseconds: 400));
+
       if (mounted) {
         Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (_) =>
-                QuestionPreviewScreen(test: test, questions: questions),
+            builder: (_) => QuestionPreviewScreen(test: test, questions: questions),
           ),
         );
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error: $e'),
-            backgroundColor: AppColors.error,
-          ),
+          SnackBar(content: Text('Error: $e'), backgroundColor: AppColors.error),
         );
       }
     } finally {
-      _stopProgressSimulation();
       if (mounted) setState(() => _isLoading = false);
     }
   }
 
-  void _startProgressSimulation() {
-    _progressTimer?.cancel();
-    _progressTimer = Timer.periodic(const Duration(milliseconds: 200), (timer) {
-      if (!mounted) {
-        timer.cancel();
-        return;
-      }
-      setState(() {
-        if (_generationProgress < 0.7) {
-          _generationProgress += 0.025;
-        } else if (_generationProgress < 0.9) {
-          _generationProgress += 0.01;
-        } else if (_generationProgress < 0.95) {
-          _generationProgress += 0.004;
-        }
-      });
-    });
-  }
-
-  void _stopProgressSimulation({bool complete = false}) {
-    _progressTimer?.cancel();
-    _progressTimer = null;
-    if (complete && mounted) {
-      setState(() => _generationProgress = 1.0);
-    }
-  }
-
-  Future<List<int>> _readFileBytes(PlatformFile file) async {
-    if (file.bytes != null) return file.bytes!;
-    if (file.path != null) return await File(file.path!).readAsBytes();
-    throw 'Could not read file data';
-  }
+  // ── Build ────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
@@ -220,10 +228,7 @@ class _CreateTestScreenState extends ConsumerState<CreateTestScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            if (_currentStep == 0)
-                              _buildStepOne()
-                            else
-                              _buildStepTwo(),
+                            if (_currentStep == 0) _buildStepOne() else _buildStepTwo(),
                             const SizedBox(height: 32),
                             _buildNavigationButtons(),
                           ],
@@ -240,6 +245,155 @@ class _CreateTestScreenState extends ConsumerState<CreateTestScreen> {
       ),
     );
   }
+
+  // ── Loading overlay ──────────────────────────────────────────────────────
+
+  Widget _buildLoadingOverlay() {
+    final progress = _targetCount == 0
+        ? 0.0
+        : (_generatedCount / _targetCount).clamp(0.0, 1.0);
+    final percent = (progress * 100).round();
+
+    // Dynamic status message based on progress
+    final String statusMsg;
+    if (_generatedCount == 0) {
+      statusMsg = 'Preparing batches...';
+    } else if (progress < 0.5) {
+      statusMsg = 'Generating questions in parallel...';
+    } else if (progress < 1.0) {
+      statusMsg = 'Almost there, finishing up...';
+    } else {
+      statusMsg = 'All questions ready!';
+    }
+
+    return Container(
+      color: Colors.white.withOpacity(0.95),
+      child: Center(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 40),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Spinner
+              ScaleTransition(
+                scale: _pulseAnimation,
+                child: const SpinKitCubeGrid(color: AppColors.primary, size: 60),
+              ),
+              const SizedBox(height: 32),
+
+              // Title
+              const Text(
+                'AI is crafting your questions...',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 8),
+
+              // Dynamic status
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 400),
+                child: Text(
+                  statusMsg,
+                  key: ValueKey(statusMsg),
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: AppColors.textSecondary, fontSize: 14),
+                ),
+              ),
+              const SizedBox(height: 32),
+
+              // Animated progress bar
+              TweenAnimationBuilder<double>(
+                tween: Tween(begin: 0.0, end: progress),
+                duration: const Duration(milliseconds: 600),
+                curve: Curves.easeOutCubic,
+                builder: (context, value, _) {
+                  return ClipRRect(
+                    borderRadius: BorderRadius.circular(10),
+                    child: LinearProgressIndicator(
+                      value: value,
+                      minHeight: 10,
+                      backgroundColor: AppColors.border,
+                      valueColor: AlwaysStoppedAnimation<Color>(
+                        value >= 1.0 ? Colors.green : AppColors.primary,
+                      ),
+                    ),
+                  );
+                },
+              ),
+              const SizedBox(height: 16),
+
+              // Percentage — animated number flip
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 300),
+                transitionBuilder: (child, animation) => SlideTransition(
+                  position: Tween<Offset>(
+                    begin: const Offset(0, 0.5),
+                    end: Offset.zero,
+                  ).animate(animation),
+                  child: FadeTransition(opacity: animation, child: child),
+                ),
+                child: Text(
+                  '$percent%',
+                  key: ValueKey(percent),
+                  style: TextStyle(
+                    fontSize: 28,
+                    fontWeight: FontWeight.bold,
+                    color: progress >= 1.0 ? Colors.green : AppColors.primary,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 6),
+
+              // Real question count — animated number flip
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 350),
+                transitionBuilder: (child, animation) => SlideTransition(
+                  position: Tween<Offset>(
+                    begin: const Offset(0, 0.6),
+                    end: Offset.zero,
+                  ).animate(CurvedAnimation(parent: animation, curve: Curves.easeOut)),
+                  child: FadeTransition(opacity: animation, child: child),
+                ),
+                child: Text(
+                  '$_generatedCount of $_targetCount questions generated',
+                  key: ValueKey(_generatedCount),
+                  style: const TextStyle(
+                    fontSize: 14,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+              ),
+
+              // Done checkmark
+              if (progress >= 1.0) ...[
+                const SizedBox(height: 20),
+                TweenAnimationBuilder<double>(
+                  tween: Tween(begin: 0.0, end: 1.0),
+                  duration: const Duration(milliseconds: 500),
+                  curve: Curves.elasticOut,
+                  builder: (context, value, child) => Transform.scale(
+                    scale: value,
+                    child: child,
+                  ),
+                  child: const Icon(
+                    Icons.check_circle_rounded,
+                    color: Colors.green,
+                    size: 48,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ── Stepper ──────────────────────────────────────────────────────────────
 
   Widget _buildStepper() {
     return Container(
@@ -271,21 +425,19 @@ class _CreateTestScreenState extends ConsumerState<CreateTestScreen> {
           height: 44,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
-            color: isActive || isCompleted
-                ? AppColors.primary
-                : AppColors.cardLight,
+            color: isActive || isCompleted ? AppColors.primary : AppColors.cardLight,
             border: Border.all(
               color: isActive ? AppColors.primary : AppColors.border,
               width: 2,
             ),
             boxShadow: isActive
                 ? [
-                    BoxShadow(
-                      color: AppColors.primary.withOpacity(0.3),
-                      blurRadius: 10,
-                      offset: const Offset(0, 4),
-                    ),
-                  ]
+              BoxShadow(
+                color: AppColors.primary.withOpacity(0.3),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
+              ),
+            ]
                 : [],
           ),
           child: Icon(
@@ -307,6 +459,8 @@ class _CreateTestScreenState extends ConsumerState<CreateTestScreen> {
     );
   }
 
+  // ── Step 1 ───────────────────────────────────────────────────────────────
+
   Widget _buildStepOne() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -316,19 +470,11 @@ class _CreateTestScreenState extends ConsumerState<CreateTestScreen> {
         AppCard(
           child: Column(
             children: [
-              _buildChoiceGroup(
-                'Standard',
-                ['11', '12'],
-                selectedClass,
-                (val) => setState(() => selectedClass = val),
-              ),
+              _buildChoiceGroup('Standard', ['11', '12'], selectedClass,
+                      (val) => setState(() => selectedClass = val)),
               const Divider(height: 32),
-              _buildChoiceGroup(
-                'Medium',
-                ['English', 'Gujarati'],
-                selectedMedium,
-                (val) => setState(() => selectedMedium = val),
-              ),
+              _buildChoiceGroup('Medium', ['English', 'Gujarati'], selectedMedium,
+                      (val) => setState(() => selectedMedium = val)),
             ],
           ),
         ),
@@ -375,14 +521,13 @@ class _CreateTestScreenState extends ConsumerState<CreateTestScreen> {
     );
   }
 
+  // ── Step 2 ───────────────────────────────────────────────────────────────
+
   Widget _buildStepTwo() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _buildSectionTitle(
-          'Source Material',
-          'How should AI generate questions?',
-        ),
+        _buildSectionTitle('Source Material', 'How should AI generate questions?'),
         const SizedBox(height: 16),
         AppCard(
           child: Column(
@@ -392,10 +537,9 @@ class _CreateTestScreenState extends ConsumerState<CreateTestScreen> {
               _buildSegmentedButton(
                 ['By Topic', 'By PDF'],
                 genMode == GenerationMode.topic ? 'By Topic' : 'By PDF',
-                (val) => setState(
-                  () => genMode = val == 'By Topic'
-                      ? GenerationMode.topic
-                      : GenerationMode.pdf,
+                    (val) => setState(
+                      () => genMode =
+                  val == 'By Topic' ? GenerationMode.topic : GenerationMode.pdf,
                 ),
               ),
               const SizedBox(height: 24),
@@ -404,7 +548,7 @@ class _CreateTestScreenState extends ConsumerState<CreateTestScreen> {
                 TextField(
                   controller: _topicController,
                   decoration: const InputDecoration(
-                    hintText: 'e.g. Newton\'s Laws of Motion',
+                    hintText: "e.g. Newton's Laws of Motion",
                     prefixIcon: Icon(Icons.topic_rounded),
                   ),
                 ),
@@ -481,24 +625,15 @@ class _CreateTestScreenState extends ConsumerState<CreateTestScreen> {
                 decoration: const InputDecoration(
                   prefixIcon: Icon(Icons.psychology_rounded),
                 ),
-                items:
-                    [
-                          {
-                            'name': 'Gemini 2.5 Flash (Fast)',
-                            'id': 'gemini-2.5-flash',
-                          },
-                          {
-                            'name': 'Gemini 2.5 Flash Lite (Light)',
-                            'id': 'gemini-2.5-flash-lite',
-                          },
-                        ]
-                        .map(
-                          (e) => DropdownMenuItem(
-                            value: e['id'],
-                            child: Text(e['name']!),
-                          ),
-                        )
-                        .toList(),
+                items: [
+                  {'name': 'Gemini 2.5 Flash (Fast)', 'id': 'gemini-2.5-flash'},
+                  {'name': 'Gemini 2.5 Flash Lite (Light)', 'id': 'gemini-2.5-flash-lite'},
+                ]
+                    .map((e) => DropdownMenuItem(
+                  value: e['id'],
+                  child: Text(e['name']!),
+                ))
+                    .toList(),
                 onChanged: (val) => setState(() => selectedModel = val!),
               ),
             ],
@@ -508,6 +643,8 @@ class _CreateTestScreenState extends ConsumerState<CreateTestScreen> {
     );
   }
 
+  // ── PDF picker ───────────────────────────────────────────────────────────
+
   Widget _buildPdfPicker() {
     return InkWell(
       onTap: _pickPdf,
@@ -516,9 +653,7 @@ class _CreateTestScreenState extends ConsumerState<CreateTestScreen> {
         duration: const Duration(milliseconds: 300),
         padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
-          color: selectedPdf != null
-              ? AppColors.primarySoft
-              : AppColors.background,
+          color: selectedPdf != null ? AppColors.primarySoft : AppColors.background,
           borderRadius: BorderRadius.circular(18),
           border: Border.all(
             color: selectedPdf != null ? AppColors.primary : AppColors.border,
@@ -551,9 +686,8 @@ class _CreateTestScreenState extends ConsumerState<CreateTestScreen> {
                       color: selectedPdf != null
                           ? AppColors.textPrimary
                           : AppColors.textMuted,
-                      fontWeight: selectedPdf != null
-                          ? FontWeight.bold
-                          : FontWeight.w500,
+                      fontWeight:
+                      selectedPdf != null ? FontWeight.bold : FontWeight.w500,
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -576,6 +710,8 @@ class _CreateTestScreenState extends ConsumerState<CreateTestScreen> {
       ),
     );
   }
+
+  // ── Navigation buttons ───────────────────────────────────────────────────
 
   Widget _buildNavigationButtons() {
     return Row(
@@ -613,74 +749,7 @@ class _CreateTestScreenState extends ConsumerState<CreateTestScreen> {
     );
   }
 
-  Widget _buildLoadingOverlay() {
-    final percent = (_generationProgress * 100).round().clamp(0, 100);
-    final generated = (_generationProgress * _targetQuestionCount)
-        .round()
-        .clamp(0, _targetQuestionCount);
-
-    return Container(
-      color: Colors.white.withOpacity(0.9),
-      child: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const SpinKitCubeGrid(color: AppColors.primary, size: 60.0),
-            const SizedBox(height: 32),
-            Text(
-              'AI is crafting your questions...',
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-                color: AppColors.textPrimary,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Analyzing source material and formatting options',
-              style: TextStyle(color: AppColors.textSecondary),
-            ),
-            const SizedBox(height: 28),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 48),
-              child: Column(
-                children: [
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(8),
-                    child: LinearProgressIndicator(
-                      value: _generationProgress,
-                      minHeight: 8,
-                      backgroundColor: AppColors.border,
-                      valueColor: const AlwaysStoppedAnimation<Color>(
-                        AppColors.primary,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    '$percent%',
-                    style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: AppColors.primary,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    '$generated of $_targetQuestionCount questions generated',
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: AppColors.textSecondary,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+  // ── Shared UI helpers ────────────────────────────────────────────────────
 
   Widget _buildSectionTitle(String title, String subtitle) {
     return Column(
@@ -694,10 +763,7 @@ class _CreateTestScreenState extends ConsumerState<CreateTestScreen> {
             letterSpacing: -0.5,
           ),
         ),
-        Text(
-          subtitle,
-          style: TextStyle(color: AppColors.textSecondary, fontSize: 14),
-        ),
+        Text(subtitle, style: TextStyle(color: AppColors.textSecondary, fontSize: 14)),
       ],
     );
   }
@@ -717,17 +783,15 @@ class _CreateTestScreenState extends ConsumerState<CreateTestScreen> {
   }
 
   Widget _buildChoiceGroup(
-    String label,
-    List<String> options,
-    String? selected,
-    Function(String) onSelect,
-  ) {
+      String label,
+      List<String> options,
+      String? selected,
+      Function(String) onSelect,
+      ) {
     return Row(
       children: [
-        Text(
-          label,
-          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
-        ),
+        Text(label,
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
         const Spacer(),
         Wrap(
           spacing: 8,
@@ -746,10 +810,10 @@ class _CreateTestScreenState extends ConsumerState<CreateTestScreen> {
   }
 
   Widget _buildSegmentedButton(
-    List<String> options,
-    String? selected,
-    Function(String) onSelect,
-  ) {
+      List<String> options,
+      String? selected,
+      Function(String) onSelect,
+      ) {
     return Container(
       decoration: BoxDecoration(
         color: AppColors.cardLight,
@@ -773,12 +837,12 @@ class _CreateTestScreenState extends ConsumerState<CreateTestScreen> {
                   borderRadius: BorderRadius.circular(12),
                   boxShadow: isSelected
                       ? [
-                          BoxShadow(
-                            color: AppColors.primary.withOpacity(0.3),
-                            blurRadius: 4,
-                            offset: const Offset(0, 2),
-                          ),
-                        ]
+                    BoxShadow(
+                      color: AppColors.primary.withOpacity(0.3),
+                      blurRadius: 4,
+                      offset: const Offset(0, 2),
+                    ),
+                  ]
                       : [],
                 ),
                 alignment: Alignment.center,
@@ -797,9 +861,11 @@ class _CreateTestScreenState extends ConsumerState<CreateTestScreen> {
     );
   }
 
+  // ── Dispose ──────────────────────────────────────────────────────────────
+
   @override
   void dispose() {
-    _progressTimer?.cancel();
+    _pulseController.dispose();
     _topicController.dispose();
     _topicHintController.dispose();
     _mcqCountController.dispose();
