@@ -11,6 +11,7 @@ import 'package:mcq_test_app/features/teacher/screens/teacher_tests_screen.dart'
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:mcq_test_app/core/providers/api_key_provider.dart';
 import 'package:mcq_test_app/models/api_key.dart';
+import 'package:mcq_test_app/core/services/ai_generator_service.dart';
 
 class TeacherDashboard extends ConsumerWidget {
   const TeacherDashboard({super.key});
@@ -407,6 +408,7 @@ class TeacherDashboard extends ConsumerWidget {
                         ? selectedKey
                         : keys.first,
                     isExpanded: true,
+                    itemHeight: null,
                     icon: const Icon(Icons.keyboard_arrow_down_rounded),
                     items: keys.map((key) {
                       return DropdownMenuItem<ApiKey>(
@@ -434,6 +436,37 @@ class TeacherDashboard extends ConsumerWidget {
               ),
 
               const SizedBox(width: 8),
+
+              if (selectedKey != null)
+                Container(
+                  margin: const EdgeInsets.only(right: 8),
+                  decoration: BoxDecoration(
+                    color: AppColors.success.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  // child: IconButton(
+                  //   onPressed: () async {
+                  //     ScaffoldMessenger.of(context).showSnackBar(
+                  //       const SnackBar(content: Text('Verifying key...')),
+                  //     );
+                  //     final isValid = await AiGeneratorService().verifyApiKey(selectedKey.key);
+                  //     if (context.mounted) {
+                  //       ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                  //       ScaffoldMessenger.of(context).showSnackBar(
+                  //         SnackBar(
+                  //           content: Text(isValid ? 'API Key is Valid! ✅' : 'API Key is Invalid or Exhausted ❌'),
+                  //           backgroundColor: isValid ? AppColors.success : AppColors.error,
+                  //         ),
+                  //       );
+                  //     }
+                  //   },
+                  //   // icon: const Icon(
+                  //   //   Icons.check_circle_outline_rounded,
+                  //   //   color: AppColors.success,
+                  //   // ),
+                  //   tooltip: 'Verify Key',
+                  // ),
+                ),
 
               Container(
                 decoration: BoxDecoration(

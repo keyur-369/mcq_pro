@@ -149,9 +149,10 @@ class _CreateTestScreenState extends ConsumerState<CreateTestScreen>
         }
       }
 
+      final aiService = AiGeneratorService();
       List<Question> questions;
       if (genMode == GenerationMode.pdf) {
-        questions = await AiGeneratorService().generateQuestionsFromPdf(
+        questions = await aiService.generateQuestionsFromPdf(
           subject: test.subject,
           topic: test.topic,
           level: test.level,
@@ -164,7 +165,7 @@ class _CreateTestScreenState extends ConsumerState<CreateTestScreen>
           onProgress: onProgress,
         );
       } else {
-        questions = await AiGeneratorService().generateQuestions(
+        questions = await aiService.generateQuestions(
           subject: test.subject,
           topic: test.topic,
           level: test.level,
@@ -175,6 +176,14 @@ class _CreateTestScreenState extends ConsumerState<CreateTestScreen>
           modelName: selectedModel,
           onProgress: onProgress,
         );
+      }
+
+      if (aiService.estimatedTokensUsed > 0) {
+        try {
+          await SupabaseService().incrementTokenUsage(selectedKey.id, aiService.estimatedTokensUsed);
+          ref.invalidate(apiKeysProvider);
+          // ignore: empty_catches
+        } catch (_) {}
       }
 
       // Snap to full before navigating

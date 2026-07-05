@@ -291,6 +291,24 @@ class SupabaseService {
       'name': name,
       'api_key': key,
       'is_active': true,
+      'tokens_used': 0,
     });
+  }
+
+  Future<void> incrementTokenUsage(String keyId, int tokens) async {
+    // First, get the current tokens used
+    final response = await supabase
+        .from('gemini_api_keys')
+        .select('tokens_used')
+        .eq('id', keyId)
+        .maybeSingle();
+
+    if (response != null) {
+      final currentTokens = response['tokens_used'] as int? ?? 0;
+      await supabase
+          .from('gemini_api_keys')
+          .update({'tokens_used': currentTokens + tokens})
+          .eq('id', keyId);
+    }
   }
 }

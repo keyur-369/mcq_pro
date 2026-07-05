@@ -10,6 +10,23 @@ class AiGeneratorService {
   static const int _maxConcurrency = 3;
   static const int _maxRetries = 3;
 
+  int _estimatedTokensUsed = 0;
+  int get estimatedTokensUsed => _estimatedTokensUsed;
+  void resetTokenCount() => _estimatedTokensUsed = 0;
+
+  Future<bool> verifyApiKey(String apiKey, {String modelName = 'gemini-2.5-flash'}) async {
+    try {
+      final model = GenerativeModel(
+        model: modelName,
+        apiKey: apiKey,
+      );
+      final response = await model.generateContent([Content.text('Hi')]);
+      return response.text != null && response.text!.isNotEmpty;
+    } catch (e) {
+      return false;
+    }
+  }
+
   // ── Error helpers ──────────────────────────────────────────────────────────
 
   bool _isModelNotAvailableError(Object error) {
@@ -38,7 +55,9 @@ class AiGeneratorService {
   }
 
   bool _shouldTryNextModel(Object error) =>
-      _isModelNotAvailableError(error) || _isQuotaOrRateLimitError(error);
+      _isModelNotAvailableError(error) || 
+      _isQuotaOrRateLimitError(error) || 
+      _isTransientError(error);
 
   List<String> _modelFallbackChain(String preferred) =>
       <String>[preferred, 'gemini-2.5-flash', 'gemini-2.5-flash-lite']
@@ -142,6 +161,16 @@ class AiGeneratorService {
           if (text == null || text.trim().isEmpty) {
             throw Exception('Empty response from AI model');
           }
+
+          // Track tokens
+          int tokens = 0;
+          if (response.usageMetadata != null) {
+            tokens = response.usageMetadata!.totalTokenCount ?? 0;
+          } else {
+            // Rough estimation if metadata is missing: 4 chars ~ 1 token
+            tokens = ((prompt.length + systemInstruction.length + text.length) / 4).ceil();
+          }
+          _estimatedTokensUsed += tokens;
 
           final data = _decodeJsonArray(text);
           final questions = data.map((item) => _mapToQuestion(item, testId)).toList();

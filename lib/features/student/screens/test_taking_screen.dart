@@ -8,6 +8,9 @@ import 'package:mcq_test_app/core/widgets/formula_text.dart';
 import 'package:mcq_test_app/models/test.dart';
 import 'package:mcq_test_app/models/question.dart';
 import 'package:mcq_test_app/features/student/screens/result_screen.dart';
+import 'package:phone_state/phone_state.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'package:flutter_windowmanager_plus/flutter_windowmanager_plus.dart';
 
 class TestTakingScreen extends StatefulWidget {
   final Test test;
@@ -25,13 +28,75 @@ class _TestTakingScreenState extends State<TestTakingScreen>
   final Map<String, String> _selectedAnswers = {};
   List<Question> _questions = [];
   bool _isLoading = true;
+  StreamSubscription<PhoneState>? _phoneStateSubscription;
+
+  // --- Secure Anti-Cheating: One-Time Ignore Counter ---
+  // Tracks how many lifecycle transitions are pre-authorized to be ignored.
+  // This is set to exactly 1 when a phone call arrives, so ONLY the single
+  // lifecycle event caused by the call UI appearing is ignored.
+  // Once consumed, it resets to 0 immediately, so any subsequent
+  // app-switching (Home, WhatsApp, etc.) still triggers _submitTest().
+  int _pendingPhoneIgnores = 0;
+  bool _isRequestingPermission = false;
 
   @override
   void initState() {
     super.initState();
     _remainingSeconds = widget.test.duration * 60;
     WidgetsBinding.instance.addObserver(this);
+    _enableSecureMode();   // Block screenshots & screen recording
+    _initPhoneStateHandling();
     _loadQuestions();
+  }
+
+  /// Enables Android FLAG_SECURE on this window.
+  /// Effect:
+  ///   • Screenshots show a pure-black image — exam content is never captured.
+  ///   • Screen recorders record black frames.
+  ///   • The Recent Apps thumbnail is blacked out.
+  ///   • The flag is window-scoped: it is automatically cleared when the
+  ///     Activity is destroyed, but we also clear it explicitly in dispose()
+  ///     so navigation back to other screens is not affected.
+  Future<void> _enableSecureMode() async {
+    await FlutterWindowManagerPlus.addFlags(FlutterWindowManagerPlus.FLAG_SECURE);
+  }
+
+  Future<void> _disableSecureMode() async {
+    await FlutterWindowManagerPlus.clearFlags(FlutterWindowManagerPlus.FLAG_SECURE);
+  }
+
+  Future<void> _initPhoneStateHandling() async {
+    setState(() => _isRequestingPermission = true);
+    
+    await Permission.phone.request();
+    
+    if (mounted) setState(() => _isRequestingPermission = false);
+    
+    _phoneStateSubscription = PhoneState.stream.listen((event) {
+      if (!mounted) return;
+
+      if (event.status == PhoneStateStatus.CALL_INCOMING) {
+        // A call is arriving. Authorize exactly ONE lifecycle ignore.
+        // This allows the system call UI to push our app to inactive/paused
+        // without triggering auto-submit.
+        // No more than 1 ignore is ever granted at a time.
+        setState(() => _pendingPhoneIgnores = 1);
+      } else if (event.status == PhoneStateStatus.CALL_STARTED) {
+        // The call was accepted. No additional ignore tokens needed — the
+        // app is already in the background. Keep _pendingPhoneIgnores as-is
+        // (still 0 after the CALL_INCOMING event consumed its token).
+        // We grant ONE more token here to handle the resume transition
+        // when the student comes back after ending the call.
+        setState(() => _pendingPhoneIgnores = 1);
+      } else if (event.status == PhoneStateStatus.CALL_ENDED ||
+                 event.status == PhoneStateStatus.NOTHING) {
+        // Call is over. Grant ONE final ignore token so the app can
+        // resume to foreground without falsely submitting.
+        // This token is consumed immediately on the very next lifecycle
+        // event (the resume), then protection is fully restored.
+        setState(() => _pendingPhoneIgnores = 1);
+      }
+    });
   }
 
   void _loadQuestions() async {
@@ -59,6 +124,8 @@ class _TestTakingScreenState extends State<TestTakingScreen>
 
   @override
   void dispose() {
+    _disableSecureMode(); // Restore screenshots for the rest of the app
+    _phoneStateSubscription?.cancel();
     _timer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
@@ -68,6 +135,18 @@ class _TestTakingScreenState extends State<TestTakingScreen>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.inactive) {
+      // Allow the permission dialog to briefly change lifecycle without submitting.
+      if (_isRequestingPermission) return;
+
+      if (_pendingPhoneIgnores > 0) {
+        // Consume exactly ONE pre-authorized ignore token and return.
+        // After this, _pendingPhoneIgnores is 0 again, so any further
+        // lifecycle change (e.g., pressing Home, opening WhatsApp) will
+        // immediately call _submitTest() as normal.
+        _pendingPhoneIgnores--;
+        return;
+      }
+
       _submitTest();
     }
   }

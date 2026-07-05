@@ -4,6 +4,7 @@ class ApiKey {
   final String key;
   final bool isActive;
   final DateTime createdAt;
+  final int tokensUsed;
 
   ApiKey({
     required this.id,
@@ -11,6 +12,7 @@ class ApiKey {
     required this.key,
     required this.isActive,
     required this.createdAt,
+    this.tokensUsed = 0,
   });
 
   factory ApiKey.fromMap(Map<String, dynamic> map) {
@@ -20,6 +22,7 @@ class ApiKey {
       key: map['api_key'] ?? '',
       isActive: map['is_active'] ?? true,
       createdAt: DateTime.parse(map['created_at'] ?? DateTime.now().toIso8601String()),
+      tokensUsed: map['tokens_used'] ?? 0,
     );
   }
 
@@ -28,6 +31,7 @@ class ApiKey {
       'name': name,
       'api_key': key,
       'is_active': isActive,
+      'tokens_used': tokensUsed,
     };
   }
 
