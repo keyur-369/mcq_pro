@@ -1,4 +1,4 @@
-package com.mcqpro.app
+package com.mcqproai.app
 
 import android.os.Bundle
 import android.view.WindowManager
