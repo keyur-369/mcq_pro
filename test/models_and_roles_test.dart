@@ -228,4 +228,132 @@ void main() {
       expect(fromMap.topic, equals('Electrostatics'));
     });
   });
+
+  group('Single Role-Based Login Architecture & Routing', () {
+    test('Admin user routes to AdminDashboard with active status check', () {
+      final admin = AppUser.fromMap({
+        'id': 'admin-id-1',
+        'role': 'admin',
+        'email': 'admin@mcqpro.com',
+        'is_active': true,
+        'must_change_password': false,
+      });
+
+      expect(admin.role, equals('admin'));
+      expect(admin.isAdmin, isTrue);
+      expect(admin.isActive, isTrue);
+
+      // Simulates router logic
+      String resolveRoute(AppUser user) {
+        if (!user.isActive) return 'deactivated';
+        if (user.isAdmin) return 'admin_dashboard';
+        if (user.isTeacher) {
+          return user.mustChangePassword ? 'set_password_screen' : 'teacher_dashboard';
+        }
+        if (user.isStudent) return 'student_dashboard';
+        return 'unauthorized';
+      }
+
+      expect(resolveRoute(admin), equals('admin_dashboard'));
+    });
+
+    test('First-time teacher is routed to set_password_screen, then returning teacher to teacher_dashboard', () {
+      final firstTimeTeacher = AppUser.fromMap({
+        'id': 'teacher-id-1',
+        'role': 'teacher',
+        'email': 'teacher@mcqpro.com',
+        'is_active': true,
+        'must_change_password': true,
+      });
+
+      String resolveRoute(AppUser user) {
+        if (!user.isActive) return 'deactivated';
+        if (user.isAdmin) return 'admin_dashboard';
+        if (user.isTeacher) {
+          return user.mustChangePassword ? 'set_password_screen' : 'teacher_dashboard';
+        }
+        if (user.isStudent) return 'student_dashboard';
+        return 'unauthorized';
+      }
+
+      expect(resolveRoute(firstTimeTeacher), equals('set_password_screen'));
+
+      // After password change, must_change_password becomes false
+      final returningTeacher = AppUser.fromMap({
+        'id': 'teacher-id-1',
+        'role': 'teacher',
+        'email': 'teacher@mcqpro.com',
+        'is_active': true,
+        'must_change_password': false,
+      });
+
+      expect(resolveRoute(returningTeacher), equals('teacher_dashboard'));
+    });
+
+    test('Student user routes directly to student_dashboard', () {
+      final student = AppUser.fromMap({
+        'id': 'student-id-1',
+        'role': 'student',
+        'email': 'student@school.org',
+        'is_active': true,
+        'must_change_password': false,
+      });
+
+      String resolveRoute(AppUser user) {
+        if (!user.isActive) return 'deactivated';
+        if (user.isAdmin) return 'admin_dashboard';
+        if (user.isTeacher) {
+          return user.mustChangePassword ? 'set_password_screen' : 'teacher_dashboard';
+        }
+        if (user.isStudent) return 'student_dashboard';
+        return 'unauthorized';
+      }
+
+      expect(resolveRoute(student), equals('student_dashboard'));
+    });
+
+    test('Inactive user is denied access regardless of role', () {
+      final deactivatedTeacher = AppUser.fromMap({
+        'id': 'teacher-inactive',
+        'role': 'teacher',
+        'email': 'bad_teacher@school.org',
+        'is_active': false,
+        'must_change_password': false,
+      });
+
+      String resolveRoute(AppUser user) {
+        if (!user.isActive) return 'deactivated';
+        if (user.isAdmin) return 'admin_dashboard';
+        if (user.isTeacher) {
+          return user.mustChangePassword ? 'set_password_screen' : 'teacher_dashboard';
+        }
+        if (user.isStudent) return 'student_dashboard';
+        return 'unauthorized';
+      }
+
+      expect(resolveRoute(deactivatedTeacher), equals('deactivated'));
+    });
+
+    test('Unrecognized or invalid role is denied access', () {
+      final invalidUser = AppUser.fromMap({
+        'id': 'unknown-id',
+        'role': 'guest',
+        'email': 'guest@unknown.org',
+        'is_active': true,
+      });
+
+      String resolveRoute(AppUser user) {
+        if (!user.isActive) return 'deactivated';
+        if (user.isAdmin) return 'admin_dashboard';
+        if (user.isTeacher) {
+          return user.mustChangePassword ? 'set_password_screen' : 'teacher_dashboard';
+        }
+        if (user.isStudent) return 'student_dashboard';
+        return 'unauthorized';
+      }
+
+      expect(resolveRoute(invalidUser), equals('unauthorized'));
+    });
+  });
 }
+

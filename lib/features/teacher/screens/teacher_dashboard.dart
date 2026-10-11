@@ -1,8 +1,9 @@
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
 import 'package:mcq_test_app/core/constants/app_colors.dart';
 import 'package:mcq_test_app/core/services/supabase_service.dart';
 import 'package:mcq_test_app/core/widgets/animated_page.dart';
-import 'package:mcq_test_app/core/widgets/app_card.dart';
 import 'package:mcq_test_app/core/widgets/app_gradient_background.dart';
 import 'package:mcq_test_app/features/auth/screens/login_screen.dart';
 import 'package:mcq_test_app/features/teacher/screens/create_test_screen.dart';
@@ -11,11 +12,122 @@ import 'package:mcq_test_app/features/teacher/screens/teacher_tests_screen.dart'
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:mcq_test_app/core/providers/api_key_provider.dart';
 import 'package:mcq_test_app/models/api_key.dart';
+import 'package:mcq_test_app/models/app_user.dart';
 import 'package:mcq_test_app/models/teacher_assignment.dart';
 import 'package:mcq_test_app/models/test_backup.dart';
 
+/// ---------------------------------------------------------------------------
+/// Liquid glass primitive
+/// Blur + translucent gradient fill + bright rim + top specular highlight
+/// + soft tinted shadow. Reused by every card on this screen.
+/// ---------------------------------------------------------------------------
+class GlassCard extends StatelessWidget {
+  final Widget child;
+  final EdgeInsetsGeometry padding;
+  final double radius;
+  final double blur;
+  final Color? tint;
+  final VoidCallback? onTap;
+
+  const GlassCard({
+    super.key,
+    required this.child,
+    this.padding = const EdgeInsets.all(18),
+    this.radius = 28,
+    this.blur = 22,
+    this.tint,
+    this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final br = BorderRadius.circular(radius);
+    final base = tint ?? Colors.white;
+
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: br,
+        boxShadow: [
+          BoxShadow(
+            color: (tint ?? AppColors.primary).withOpacity(0.14),
+            blurRadius: 30,
+            offset: const Offset(0, 14),
+          ),
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: br,
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
+          child: Stack(
+            children: [
+              // Glass body
+              Positioned.fill(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    borderRadius: br,
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        base.withOpacity(0.42),
+                        base.withOpacity(0.14),
+                      ],
+                    ),
+                    border: Border.all(
+                      color: Colors.white.withOpacity(0.55),
+                      width: 1.2,
+                    ),
+                  ),
+                ),
+              ),
+              // Specular highlight (top edge light refraction)
+              Positioned(
+                left: 0,
+                right: 0,
+                top: 0,
+                height: 70,
+                child: IgnorePointer(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          Colors.white.withOpacity(0.30),
+                          Colors.white.withOpacity(0.0),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              Material(
+                type: MaterialType.transparency,
+                child: InkWell(
+                  onTap: onTap,
+                  borderRadius: br,
+                  splashColor: Colors.white.withOpacity(0.25),
+                  highlightColor: Colors.white.withOpacity(0.10),
+                  child: Padding(padding: padding, child: child),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class TeacherDashboard extends ConsumerStatefulWidget {
-  const TeacherDashboard({super.key});
+  final AppUser? user;
+  const TeacherDashboard({super.key, this.user});
 
   @override
   ConsumerState<TeacherDashboard> createState() => _TeacherDashboardState();
@@ -25,10 +137,19 @@ class _TeacherDashboardState extends ConsumerState<TeacherDashboard> {
   List<TeacherAssignment> _assignments = [];
   List<TestBackup> _backups = [];
   bool _isLoadingScope = true;
+  String _teacherName = 'Teacher';
 
   @override
   void initState() {
     super.initState();
+    if (widget.user?.name != null && widget.user!.name!.trim().isNotEmpty) {
+      _teacherName = widget.user!.name!.trim();
+    } else {
+      final curUser = SupabaseService().currentUser;
+      _teacherName = curUser?.userMetadata?['name']?.toString() ??
+          curUser?.email?.split('@').first ??
+          'Teacher';
+    }
     _loadTeacherData();
   }
 
@@ -36,10 +157,15 @@ class _TeacherDashboardState extends ConsumerState<TeacherDashboard> {
     final user = SupabaseService().currentUser;
     if (user != null) {
       try {
-        final assignments = await SupabaseService().getTeacherAssignments(user.id);
+        final profile = await SupabaseService().getUserProfile(user.id);
+        final assignments =
+        await SupabaseService().getTeacherAssignments(user.id);
         final backups = await SupabaseService().getTestBackups();
         if (mounted) {
           setState(() {
+            if (profile?.name != null && profile!.name!.trim().isNotEmpty) {
+              _teacherName = profile.name!.trim();
+            }
             _assignments = assignments;
             _backups = backups;
             _isLoadingScope = false;
@@ -53,6 +179,16 @@ class _TeacherDashboardState extends ConsumerState<TeacherDashboard> {
     }
   }
 
+  Future<void> _logout() async {
+    await SupabaseService().logout();
+    if (mounted) {
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const LoginScreen()),
+            (route) => false,
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final apiKeysAsync = ref.watch(apiKeysProvider);
@@ -63,65 +199,66 @@ class _TeacherDashboardState extends ConsumerState<TeacherDashboard> {
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
-       title: const Text(
-        'MCQ Pro',
-        style: TextStyle(
-          fontSize: 22,
-          fontWeight: FontWeight.w800,
-          color: AppColors.textPrimary,
+        scrolledUnderElevation: 0,
+        title: const Text(
+          'MCQ Pro',
+          style: TextStyle(
+            fontSize: 22,
+            fontWeight: FontWeight.w800,
+            color: AppColors.textPrimary,
+          ),
         ),
-      ),
         centerTitle: false,
         actions: [
-          IconButton(
-            onPressed: () async {
-              await SupabaseService().logout();
-              if (context.mounted) {
-                Navigator.of(context).pushAndRemoveUntil(
-                  MaterialPageRoute(builder: (_) => const LoginScreen()),
-                      (route) => false,
-                );
-              }
-            },
-            icon: const Icon(Icons.logout_rounded),
+          Padding(
+            padding: const EdgeInsets.only(right: 16),
+            child: GlassCard(
+              radius: 16,
+              blur: 16,
+              padding: const EdgeInsets.all(10),
+              onTap: _logout,
+              child: const Icon(
+                Icons.logout_rounded,
+                size: 20,
+                color: AppColors.textPrimary,
+              ),
+            ),
           ),
-          const SizedBox(width: 8),
         ],
       ),
       body: AppGradientBackground(
         child: SafeArea(
           child: AnimatedPage(
             child: ListView(
-              padding: const EdgeInsets.fromLTRB(24, 20, 24, 24),
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
               children: [
                 _buildWelcomeBanner(),
-                const SizedBox(height: 20),
+                const SizedBox(height: 18),
                 _buildTeachingScopeCard(),
-                const SizedBox(height: 24),
+                const SizedBox(height: 26),
                 _buildSectionHeader(
                   title: 'AI Configuration',
                   subtitle: selectedKey == null
                       ? 'No active AI key selected'
                       : 'Active key: ${selectedKey.name}',
                 ),
-                const SizedBox(height: 16),
-
-                _buildApiKeySelector(context, ref, apiKeysAsync, selectedKey),
-                const SizedBox(height: 24),
+                const SizedBox(height: 14),
+                _buildApiKeySelector(
+                    context, ref, apiKeysAsync, selectedKey),
+                const SizedBox(height: 26),
                 _buildSectionHeader(
                   title: 'Quick Actions',
                   subtitle: 'Create, manage and analyze tests',
                 ),
-                const SizedBox(height: 18),
-
+                const SizedBox(height: 16),
                 GridView.count(
                   padding: EdgeInsets.zero,
                   shrinkWrap: true,
                   physics: const NeverScrollableScrollPhysics(),
                   crossAxisCount: 2,
-                  crossAxisSpacing: 16,
-                  mainAxisSpacing: 16,
-                  childAspectRatio: 0.88,
+                  crossAxisSpacing: 14,
+                  mainAxisSpacing: 14,
+                  childAspectRatio: 0.9,
                   children: [
                     _buildDashboardCard(
                       context,
@@ -141,7 +278,10 @@ class _TeacherDashboardState extends ConsumerState<TeacherDashboard> {
                       title: 'Drafts',
                       subtitle: 'In Progress',
                       icon: Icons.edit_document,
-                      gradient: [AppColors.secondary, const Color(0xFFF472B6)],
+                      gradient: [
+                        AppColors.secondary,
+                        const Color(0xFFF472B6)
+                      ],
                       onTap: () => Navigator.push(
                         context,
                         MaterialPageRoute(
@@ -155,7 +295,10 @@ class _TeacherDashboardState extends ConsumerState<TeacherDashboard> {
                       title: 'Published',
                       subtitle: 'Live Tests',
                       icon: Icons.rocket_launch_rounded,
-                      gradient: [AppColors.success, const Color(0xFF34D399)],
+                      gradient: [
+                        AppColors.success,
+                        const Color(0xFF34D399)
+                      ],
                       onTap: () => Navigator.push(
                         context,
                         MaterialPageRoute(
@@ -169,7 +312,10 @@ class _TeacherDashboardState extends ConsumerState<TeacherDashboard> {
                       title: 'Analytics',
                       subtitle: 'Student Performance',
                       icon: Icons.analytics_rounded,
-                      gradient: [AppColors.accent, const Color(0xFF67E8F9)],
+                      gradient: [
+                        AppColors.accent,
+                        const Color(0xFF67E8F9)
+                      ],
                       onTap: () => Navigator.push(
                         context,
                         MaterialPageRoute(
@@ -179,8 +325,7 @@ class _TeacherDashboardState extends ConsumerState<TeacherDashboard> {
                     ),
                   ],
                 ),
-
-                const SizedBox(height: 16),
+                const SizedBox(height: 18),
                 _buildDriveBackupCard(context),
                 const SizedBox(height: 30),
               ],
@@ -191,13 +336,19 @@ class _TeacherDashboardState extends ConsumerState<TeacherDashboard> {
     );
   }
 
+  // ---------------------------------------------------------------------------
+  // Teaching scope
+  // ---------------------------------------------------------------------------
   Widget _buildTeachingScopeCard() {
     if (_isLoadingScope) {
-      return const SizedBox(height: 60, child: Center(child: CircularProgressIndicator(strokeWidth: 2)));
+      return const SizedBox(
+        height: 60,
+        child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+      );
     }
 
     if (_assignments.isEmpty) {
-      return AppCard(
+      return GlassCard(
         padding: const EdgeInsets.all(16),
         child: Row(
           children: [
@@ -214,12 +365,13 @@ class _TeacherDashboardState extends ConsumerState<TeacherDashboard> {
       );
     }
 
-    final standards = _assignments.map((a) => 'Std ${a.standard}').toSet().join(', ');
+    final standards =
+    _assignments.map((a) => 'Std ${a.standard}').toSet().join(', ');
     final divisions = _assignments.map((a) => a.division).toSet().join(', ');
     final mediums = _assignments.map((a) => a.medium).toSet().join(', ');
     final subjects = _assignments.map((a) => a.subject).toSet().join(', ');
 
-    return AppCard(
+    return GlassCard(
       padding: const EdgeInsets.all(18),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -229,28 +381,44 @@ class _TeacherDashboardState extends ConsumerState<TeacherDashboard> {
               Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: AppColors.primarySoft,
-                  borderRadius: BorderRadius.circular(10),
+                  color: Colors.white.withOpacity(0.45),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.white.withOpacity(0.6)),
                 ),
-                child: const Icon(Icons.assignment_ind_rounded, color: AppColors.primary, size: 20),
+                child: const Icon(Icons.assignment_ind_rounded,
+                    color: AppColors.primary, size: 20),
               ),
               const SizedBox(width: 10),
               const Expanded(
                 child: Text(
                   'My Teaching Permissions',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: AppColors.textPrimary),
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 15,
+                    color: AppColors.textPrimary,
+                  ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
               const SizedBox(width: 8),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                padding:
+                const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                 decoration: BoxDecoration(
-                  color: AppColors.success.withOpacity(0.12),
-                  borderRadius: BorderRadius.circular(8),
+                  color: AppColors.success.withOpacity(0.16),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                      color: AppColors.success.withOpacity(0.35)),
                 ),
-                child: const Text('Authorized', style: TextStyle(color: AppColors.success, fontSize: 11, fontWeight: FontWeight.bold)),
+                child: const Text(
+                  'Authorized',
+                  style: TextStyle(
+                    color: AppColors.success,
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
               ),
             ],
           ),
@@ -271,44 +439,67 @@ class _TeacherDashboardState extends ConsumerState<TeacherDashboard> {
   }
 
   Widget _buildScopeChip(IconData icon, String text) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: AppColors.cardBackground.withOpacity(0.8),
-        border: Border.all(color: AppColors.border),
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 14, color: AppColors.primary),
-          const SizedBox(width: 6),
-          Text(text, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
-        ],
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(14),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [
+                Colors.white.withOpacity(0.55),
+                Colors.white.withOpacity(0.25),
+              ],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            border: Border.all(color: Colors.white.withOpacity(0.7)),
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 14, color: AppColors.primary),
+              const SizedBox(width: 6),
+              Text(
+                text,
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
 
+  // ---------------------------------------------------------------------------
+  // Drive backup
+  // ---------------------------------------------------------------------------
   Widget _buildDriveBackupCard(BuildContext context) {
     final failedCount = _backups.where((b) => b.status == 'failed').length;
-    final completedCount = _backups.where((b) => b.status == 'completed').length;
+    final completedCount =
+        _backups.where((b) => b.status == 'completed').length;
+    final statusColor = failedCount > 0 ? AppColors.error : AppColors.success;
 
-    return AppCard(
+    return GlassCard(
       padding: const EdgeInsets.all(18),
+      tint: failedCount > 0 ? AppColors.error : null,
       onTap: () => _showBackupStatusModal(context),
       child: Row(
         children: [
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: failedCount > 0 ? AppColors.error.withOpacity(0.12) : AppColors.success.withOpacity(0.12),
+              color: statusColor.withOpacity(0.15),
               borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: statusColor.withOpacity(0.3)),
             ),
-            child: Icon(
-              Icons.cloud_sync_rounded,
-              color: failedCount > 0 ? AppColors.error : AppColors.success,
-              size: 24,
-            ),
+            child: Icon(Icons.cloud_sync_rounded, color: statusColor, size: 24),
           ),
           const SizedBox(width: 14),
           Expanded(
@@ -317,7 +508,11 @@ class _TeacherDashboardState extends ConsumerState<TeacherDashboard> {
               children: [
                 const Text(
                   'Google Drive Backup Status',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: AppColors.textPrimary),
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 15,
+                    color: AppColors.textPrimary,
+                  ),
                 ),
                 const SizedBox(height: 4),
                 Text(
@@ -327,13 +522,16 @@ class _TeacherDashboardState extends ConsumerState<TeacherDashboard> {
                   style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w500,
-                    color: failedCount > 0 ? AppColors.error : AppColors.textSecondary,
+                    color: failedCount > 0
+                        ? AppColors.error
+                        : AppColors.textSecondary,
                   ),
                 ),
               ],
             ),
           ),
-          const Icon(Icons.arrow_forward_ios_rounded, size: 14, color: AppColors.textMuted),
+          const Icon(Icons.arrow_forward_ios_rounded,
+              size: 14, color: AppColors.textMuted),
         ],
       ),
     );
@@ -342,181 +540,335 @@ class _TeacherDashboardState extends ConsumerState<TeacherDashboard> {
   void _showBackupStatusModal(BuildContext context) {
     showModalBottomSheet(
       context: context,
-      backgroundColor: AppColors.cardBackground,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      backgroundColor: Colors.transparent,
+      elevation: 0,
+      isScrollControlled: true,
       builder: (ctx) {
-        return StatefulBuilder(
-          builder: (ctx, setModalState) {
-            return Padding(
-              padding: const EdgeInsets.fromLTRB(24, 20, 24, 24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      const Icon(Icons.add_to_drive_rounded, color: AppColors.primary),
-                      const SizedBox(width: 10),
-                      const Text(
-                        'Drive Backup Archive',
-                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
-                      ),
-                      const Spacer(),
-                      IconButton(
-                        onPressed: () => Navigator.pop(ctx),
-                        icon: const Icon(Icons.close_rounded),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  const Text(
-                    'All published tests and answer keys are archived in Google Drive under 7-day retention rules.',
-                    style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
-                  ),
-                  const SizedBox(height: 16),
-                  if (_backups.isEmpty)
-                    const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 24),
-                      child: Center(child: Text('No backup records found yet', style: TextStyle(color: AppColors.textMuted))),
-                    )
-                  else
-                    Flexible(
-                      child: ListView.separated(
-                        shrinkWrap: true,
-                        itemCount: _backups.length,
-                        separatorBuilder: (_, __) => const Divider(height: 1, color: AppColors.border),
-                        itemBuilder: (ctx, i) {
-                          final b = _backups[i];
-                          final isFailed = b.status == 'failed';
-                          final isCompleted = b.status == 'completed';
+        return ClipRRect(
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
+            child: Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Colors.white.withOpacity(0.72),
+                    Colors.white.withOpacity(0.50),
+                  ],
+                ),
+                border: Border(
+                  top: BorderSide(
+                      color: Colors.white.withOpacity(0.8), width: 1.2),
+                ),
+              ),
+              child: StatefulBuilder(
+                builder: (ctx, setModalState) {
+                  return Padding(
+                    padding: const EdgeInsets.fromLTRB(24, 12, 24, 28),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Center(
+                          child: Container(
+                            width: 40,
+                            height: 4,
+                            decoration: BoxDecoration(
+                              color: AppColors.textMuted.withOpacity(0.5),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 14),
+                        Row(
+                          children: [
+                            const Icon(Icons.add_to_drive_rounded,
+                                color: AppColors.primary),
+                            const SizedBox(width: 10),
+                            const Text(
+                              'Drive Backup Archive',
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                                color: AppColors.textPrimary,
+                              ),
+                            ),
+                            const Spacer(),
+                            IconButton(
+                              onPressed: () => Navigator.pop(ctx),
+                              icon: const Icon(Icons.close_rounded),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        const Text(
+                          'All published tests and answer keys are archived in Google Drive under 7-day retention rules.',
+                          style: TextStyle(
+                              fontSize: 12, color: AppColors.textSecondary),
+                        ),
+                        const SizedBox(height: 16),
+                        if (_backups.isEmpty)
+                          const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 24),
+                            child: Center(
+                              child: Text(
+                                'No backup records found yet',
+                                style: TextStyle(color: AppColors.textMuted),
+                              ),
+                            ),
+                          )
+                        else
+                          Flexible(
+                            child: ListView.separated(
+                              shrinkWrap: true,
+                              itemCount: _backups.length,
+                              separatorBuilder: (_, __) => Divider(
+                                height: 1,
+                                color: Colors.white.withOpacity(0.7),
+                              ),
+                              itemBuilder: (ctx, i) {
+                                final b = _backups[i];
+                                final isFailed = b.status == 'failed';
+                                final isCompleted = b.status == 'completed';
 
-                          return ListTile(
-                            contentPadding: EdgeInsets.zero,
-                            leading: Icon(
-                              isCompleted ? Icons.check_circle_rounded : (isFailed ? Icons.error_rounded : Icons.hourglass_top_rounded),
-                              color: isCompleted ? AppColors.success : (isFailed ? AppColors.error : AppColors.secondary),
-                            ),
-                            title: Text(
-                              b.driveFileName ?? 'Test Backup #${b.testId.substring(0, 6)}',
-                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppColors.textPrimary),
-                            ),
-                            subtitle: Text(
-                              'Status: ${b.status.toUpperCase()} ${b.errorMessage != null ? "• ${b.errorMessage}" : ""}',
-                              style: TextStyle(fontSize: 11, color: isFailed ? AppColors.error : AppColors.textSecondary),
-                            ),
-                            trailing: isFailed
-                                ? TextButton.icon(
+                                return ListTile(
+                                  contentPadding: EdgeInsets.zero,
+                                  leading: Icon(
+                                    isCompleted
+                                        ? Icons.check_circle_rounded
+                                        : (isFailed
+                                        ? Icons.error_rounded
+                                        : Icons.hourglass_top_rounded),
+                                    color: isCompleted
+                                        ? AppColors.success
+                                        : (isFailed
+                                        ? AppColors.error
+                                        : AppColors.secondary),
+                                  ),
+                                  title: Text(
+                                    b.driveFileName ??
+                                        'Test Backup #${b.testId.substring(0, 6)}',
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 13,
+                                      color: AppColors.textPrimary,
+                                    ),
+                                  ),
+                                  subtitle: Text(
+                                    'Status: ${b.status.toUpperCase()} ${b.errorMessage != null ? "• ${b.errorMessage}" : ""}',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: isFailed
+                                          ? AppColors.error
+                                          : AppColors.textSecondary,
+                                    ),
+                                  ),
+                                  trailing: isFailed
+                                      ? TextButton.icon(
                                     onPressed: () async {
-                                      final success = await SupabaseService().retryBackup(b.id, 'test');
+                                      final success =
+                                      await SupabaseService()
+                                          .retryBackup(b.id, 'test');
                                       if (ctx.mounted) {
-                                        ScaffoldMessenger.of(ctx).showSnackBar(
+                                        ScaffoldMessenger.of(ctx)
+                                            .showSnackBar(
                                           SnackBar(
-                                            content: Text(success ? 'Retry initiated' : 'Retry failed. Please contact Admin.'),
-                                            backgroundColor: success ? AppColors.success : AppColors.error,
+                                            content: Text(success
+                                                ? 'Retry initiated'
+                                                : 'Retry failed. Please contact Admin.'),
+                                            backgroundColor: success
+                                                ? AppColors.success
+                                                : AppColors.error,
                                           ),
                                         );
                                         await _loadTeacherData();
                                         setModalState(() {});
                                       }
                                     },
-                                    icon: const Icon(Icons.refresh_rounded, size: 14),
-                                    label: const Text('Retry', style: TextStyle(fontSize: 12)),
+                                    icon: const Icon(
+                                        Icons.refresh_rounded,
+                                        size: 14),
+                                    label: const Text('Retry',
+                                        style: TextStyle(fontSize: 12)),
                                   )
-                                : null,
-                          );
-                        },
-                      ),
+                                      : null,
+                                );
+                              },
+                            ),
+                          ),
+                      ],
                     ),
-                ],
+                  );
+                },
               ),
-            );
-          },
+            ),
+          ),
         );
       },
     );
   }
 
+  // ---------------------------------------------------------------------------
+  // Welcome banner (gradient hero with a glass overlay pane)
+  // ---------------------------------------------------------------------------
   Widget _buildWelcomeBanner() {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
           colors: AppColors.primaryGradient,
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
-        borderRadius: BorderRadius.circular(32),
+        borderRadius: BorderRadius.circular(34),
         boxShadow: [
           BoxShadow(
-            color: AppColors.primary.withOpacity(0.3),
-            blurRadius: 20,
-            offset: const Offset(0, 10),
+            color: AppColors.primary.withOpacity(0.35),
+            blurRadius: 28,
+            offset: const Offset(0, 14),
           ),
         ],
       ),
-      child: Stack(
-        children: [
-          Positioned(
-            right: -10,
-            top: 4,
-            child: Icon(
-              Icons.school_rounded,
-              color: Colors.white.withOpacity(0.18),
-              size: 110,
-            ),
-          ),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Welcome Back,',
-                style: TextStyle(
-                  color: Colors.white70,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: 6),
-              const Text(
-                'Educator',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 34,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                'Create and manage AI-powered MCQ tests',
-                style: TextStyle(
-                  color: Colors.white70,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-              const SizedBox(height: 18),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 14,
-                  vertical: 8,
-                ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(34),
+        child: Stack(
+          children: [
+            // Decorative glass bubbles
+            Positioned(
+              right: -30,
+              top: -30,
+              child: Container(
+                width: 150,
+                height: 150,
                 decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.18),
-                  borderRadius: BorderRadius.circular(30),
+                  shape: BoxShape.circle,
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      Colors.white.withOpacity(0.30),
+                      Colors.white.withOpacity(0.04),
+                    ],
+                  ),
+                  border: Border.all(color: Colors.white.withOpacity(0.35)),
                 ),
-                child: const Text(
-                  'Ready to evaluate?',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
+              ),
+            ),
+            Positioned(
+              right: 36,
+              bottom: -26,
+              child: Container(
+                width: 90,
+                height: 90,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      Colors.white.withOpacity(0.22),
+                      Colors.white.withOpacity(0.02),
+                    ],
+                  ),
+                  border: Border.all(color: Colors.white.withOpacity(0.28)),
+                ),
+              ),
+            ),
+            Positioned(
+              right: 22,
+              top: 22,
+              child: Icon(
+                Icons.school_rounded,
+                color: Colors.white.withOpacity(0.5),
+                size: 72,
+              ),
+            ),
+            // Top specular sheen
+            Positioned(
+              left: 0,
+              right: 0,
+              top: 0,
+              height: 80,
+              child: IgnorePointer(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Colors.white.withOpacity(0.22),
+                        Colors.white.withOpacity(0.0),
+                      ],
+                    ),
                   ),
                 ),
               ),
-            ],
-          ),
-        ],
+            ),
+            Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Welcome Back,',
+                    style: TextStyle(
+                      color: Colors.white70,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    _teacherName,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 32,
+                      fontWeight: FontWeight.w900,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Create and manage AI-powered MCQ tests',
+                    style: TextStyle(
+                      color: Colors.white70,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(30),
+                    child: BackdropFilter(
+                      filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 14, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.20),
+                          borderRadius: BorderRadius.circular(30),
+                          border: Border.all(
+                              color: Colors.white.withOpacity(0.45)),
+                        ),
+                        child: const Text(
+                          'Ready to evaluate?',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -531,8 +883,18 @@ class _TeacherDashboardState extends ConsumerState<TeacherDashboard> {
           width: 5,
           height: 34,
           decoration: BoxDecoration(
-            color: AppColors.primary,
+            gradient: const LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [AppColors.primary, AppColors.primaryLight],
+            ),
             borderRadius: BorderRadius.circular(20),
+            boxShadow: [
+              BoxShadow(
+                color: AppColors.primary.withOpacity(0.35),
+                blurRadius: 8,
+              ),
+            ],
           ),
         ),
         const SizedBox(width: 12),
@@ -564,6 +926,9 @@ class _TeacherDashboardState extends ConsumerState<TeacherDashboard> {
     );
   }
 
+  // ---------------------------------------------------------------------------
+  // Quick action tile
+  // ---------------------------------------------------------------------------
   Widget _buildDashboardCard(
       BuildContext context, {
         required String title,
@@ -572,63 +937,69 @@ class _TeacherDashboardState extends ConsumerState<TeacherDashboard> {
         required List<Color> gradient,
         required VoidCallback onTap,
       }) {
-    return AppCard(
+    return GlassCard(
       onTap: onTap,
-      padding: EdgeInsets.zero,
-      child: Padding(
-        padding: const EdgeInsets.all(18),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(colors: gradient),
-                    borderRadius: BorderRadius.circular(18),
-                    boxShadow: [
-                      BoxShadow(
-                        color: gradient.first.withOpacity(0.28),
-                        blurRadius: 12,
-                        offset: const Offset(0, 6),
-                      ),
-                    ],
+      tint: gradient.first,
+      padding: const EdgeInsets.all(18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: gradient,
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
                   ),
-                  child: Icon(icon, color: Colors.white, size: 26),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: Colors.white.withOpacity(0.5)),
+                  boxShadow: [
+                    BoxShadow(
+                      color: gradient.first.withOpacity(0.40),
+                      blurRadius: 16,
+                      offset: const Offset(0, 8),
+                    ),
+                  ],
                 ),
-                const Spacer(),
-                const Icon(
-                  Icons.arrow_forward_ios_rounded,
-                  size: 14,
-                  color: AppColors.textMuted,
-                ),
-              ],
-            ),
-            const Spacer(),
-            Text(
-              title,
-              style: const TextStyle(
-                fontWeight: FontWeight.w900,
-                fontSize: 18,
-                color: AppColors.textPrimary,
+                child: Icon(icon, color: Colors.white, size: 26),
               ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              subtitle,
-              style: const TextStyle(
-                color: AppColors.textSecondary,
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
+              const Spacer(),
+              const Icon(
+                Icons.arrow_forward_ios_rounded,
+                size: 14,
+                color: AppColors.textMuted,
               ),
+            ],
+          ),
+          const Spacer(),
+          Text(
+            title,
+            style: const TextStyle(
+              fontWeight: FontWeight.w900,
+              fontSize: 18,
+              color: AppColors.textPrimary,
             ),
-          ],
-        ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            subtitle,
+            style: const TextStyle(
+              color: AppColors.textSecondary,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
       ),
     );
   }
 
+  // ---------------------------------------------------------------------------
+  // AI key selector
+  // ---------------------------------------------------------------------------
   Widget _buildApiKeySelector(
       BuildContext context,
       WidgetRef ref,
@@ -643,15 +1014,16 @@ class _TeacherDashboardState extends ConsumerState<TeacherDashboard> {
           });
         }
 
-        return AppCard(
-          padding: const EdgeInsets.all(18),
+        return GlassCard(
+          padding: const EdgeInsets.all(16),
           child: Row(
             children: [
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: AppColors.primarySoft,
+                  color: Colors.white.withOpacity(0.5),
                   borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: Colors.white.withOpacity(0.7)),
                 ),
                 child: const Icon(
                   Icons.vpn_key_rounded,
@@ -660,7 +1032,6 @@ class _TeacherDashboardState extends ConsumerState<TeacherDashboard> {
                 ),
               ),
               const SizedBox(width: 14),
-
               Expanded(
                 child: keys.isEmpty
                     ? const Column(
@@ -687,12 +1058,14 @@ class _TeacherDashboardState extends ConsumerState<TeacherDashboard> {
                 )
                     : DropdownButtonHideUnderline(
                   child: DropdownButton<ApiKey>(
-                    value:
-                    (selectedKey != null && keys.contains(selectedKey))
+                    value: (selectedKey != null &&
+                        keys.contains(selectedKey))
                         ? selectedKey
                         : keys.first,
                     isExpanded: true,
                     itemHeight: null,
+                    borderRadius: BorderRadius.circular(20),
+                    dropdownColor: Colors.white.withOpacity(0.95),
                     icon: const Icon(Icons.keyboard_arrow_down_rounded),
                     items: keys.map((key) {
                       return DropdownMenuItem<ApiKey>(
@@ -711,58 +1084,35 @@ class _TeacherDashboardState extends ConsumerState<TeacherDashboard> {
                     }).toList(),
                     onChanged: (val) {
                       if (val != null) {
-                        ref.read(selectedApiKeyProvider.notifier).state =
-                            val;
+                        ref
+                            .read(selectedApiKeyProvider.notifier)
+                            .state = val;
                       }
                     },
                   ),
                 ),
               ),
-
               const SizedBox(width: 8),
-
-              if (selectedKey != null)
-                Container(
-                  margin: const EdgeInsets.only(right: 8),
-                  decoration: BoxDecoration(
-                    color: AppColors.success.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  // child: IconButton(
-                  //   onPressed: () async {
-                  //     ScaffoldMessenger.of(context).showSnackBar(
-                  //       const SnackBar(content: Text('Verifying key...')),
-                  //     );
-                  //     final isValid = await AiGeneratorService().verifyApiKey(selectedKey.key);
-                  //     if (context.mounted) {
-                  //       ScaffoldMessenger.of(context).hideCurrentSnackBar();
-                  //       ScaffoldMessenger.of(context).showSnackBar(
-                  //         SnackBar(
-                  //           content: Text(isValid ? 'API Key is Valid! ✅' : 'API Key is Invalid or Exhausted ❌'),
-                  //           backgroundColor: isValid ? AppColors.success : AppColors.error,
-                  //         ),
-                  //       );
-                  //     }
-                  //   },
-                  //   // icon: const Icon(
-                  //   //   Icons.check_circle_outline_rounded,
-                  //   //   color: AppColors.success,
-                  //   // ),
-                  //   tooltip: 'Verify Key',
-                  // ),
-                ),
-
               Container(
                 decoration: BoxDecoration(
-                  color: AppColors.primarySoft,
                   shape: BoxShape.circle,
+                  gradient: const LinearGradient(
+                    colors: [AppColors.primary, AppColors.primaryLight],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  border: Border.all(color: Colors.white.withOpacity(0.6)),
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppColors.primary.withOpacity(0.35),
+                      blurRadius: 12,
+                      offset: const Offset(0, 5),
+                    ),
+                  ],
                 ),
                 child: IconButton(
                   onPressed: () => _showAddKeyDialog(context, ref),
-                  icon: const Icon(
-                    Icons.add_rounded,
-                    color: AppColors.primary,
-                  ),
+                  icon: const Icon(Icons.add_rounded, color: Colors.white),
                   tooltip: 'Add New AI Key',
                 ),
               ),
@@ -780,72 +1130,82 @@ class _TeacherDashboardState extends ConsumerState<TeacherDashboard> {
 
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text(
-          'Add Gemini API Key',
-          style: TextStyle(
-            color: AppColors.textPrimary,
-            fontWeight: FontWeight.bold,
+      barrierColor: Colors.black.withOpacity(0.25),
+      builder: (context) => BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
+        child: AlertDialog(
+          backgroundColor: Colors.white.withOpacity(0.88),
+          surfaceTintColor: Colors.transparent,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(28),
+            side: BorderSide(color: Colors.white.withOpacity(0.8)),
           ),
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text(
-              'Paste your Gemini API key below. The name will be automatically generated.',
-              style: TextStyle(fontSize: 13, color: AppColors.textSecondary),
+          title: const Text(
+            'Add Gemini API Key',
+            style: TextStyle(
+              color: AppColors.textPrimary,
+              fontWeight: FontWeight.bold,
             ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: keyController,
-              decoration: const InputDecoration(
-                labelText: 'API Key',
-                hintText: 'AIzaSy...',
-                prefixIcon: Icon(Icons.key_rounded),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'Paste your Gemini API key below. The name will be automatically generated.',
+                style: TextStyle(fontSize: 13, color: AppColors.textSecondary),
               ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: keyController,
+                decoration: const InputDecoration(
+                  labelText: 'API Key',
+                  hintText: 'AIzaSy...',
+                  prefixIcon: Icon(Icons.key_rounded),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                if (keyController.text.isNotEmpty) {
+                  try {
+                    final currentKeys = ref.read(apiKeysProvider).value ?? [];
+                    final nextNumber = currentKeys.length + 1;
+                    final autoName = 'Gemini Key $nextNumber';
+
+                    await SupabaseService().addApiKey(
+                      autoName,
+                      keyController.text.trim(),
+                    );
+
+                    if (context.mounted) {
+                      Navigator.pop(context);
+                      ref.invalidate(apiKeysProvider);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('$autoName added successfully')),
+                      );
+                    }
+                  } catch (e) {
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Failed to add key: $e'),
+                          backgroundColor: AppColors.error,
+                        ),
+                      );
+                    }
+                  }
+                }
+              },
+              child: const Text('Add Key'),
             ),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              if (keyController.text.isNotEmpty) {
-                try {
-                  final currentKeys = ref.read(apiKeysProvider).value ?? [];
-                  final nextNumber = currentKeys.length + 1;
-                  final autoName = 'Gemini Key $nextNumber';
-
-                  await SupabaseService().addApiKey(
-                    autoName,
-                    keyController.text.trim(),
-                  );
-
-                  if (context.mounted) {
-                    Navigator.pop(context);
-                    ref.invalidate(apiKeysProvider);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('$autoName added successfully')),
-                    );
-                  }
-                } catch (e) {
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text('Failed to add key: $e'),
-                        backgroundColor: AppColors.error,
-                      ),
-                    );
-                  }
-                }
-              }
-            },
-            child: const Text('Add Key'),
-          ),
-        ],
       ),
     );
   }

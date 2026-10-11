@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:ui';
 import 'package:flutter/foundation.dart';
 import 'package:intl/intl.dart';
@@ -7,6 +8,68 @@ import 'package:mcq_test_app/models/question.dart';
 import 'package:mcq_test_app/models/test.dart';
 
 class PdfExportService {
+  /// Robust string sanitizer for PDF generation with standard PDF fonts.
+  /// Standard Helvetica/Times/Courier only support standard WinAnsi / ASCII characters.
+  /// Characters like 8207 (\u200F - Right-to-Left Mark), zero-width characters,
+  /// fancy quotes, dashes, math glyphs, or regional characters will crash
+  /// Syncfusion with "Invalid argument (The character is not supported by the font.): <CODE>".
+  /// This method maps known symbols to safe equivalents and strips unmapped glyphs.
+  static String _cleanText(String? input) {
+    if (input == null || input.isEmpty) return '';
+
+    // 1. Convert common Unicode typography and symbols to safe ASCII equivalents
+    String s = input
+        // Remove directional marks, zero-width spaces, BOM, soft hyphens (like \u200F / 8207)
+        .replaceAll(RegExp(r'[\u200B-\u200F\uFEFF\u00AD\u202A-\u202E\u2060]'), '')
+        // Single & double quotes
+        .replaceAll(RegExp(r'[\u2018\u2019\u201A\u201B\u02BC\u02B9]'), "'")
+        .replaceAll(RegExp(r'[\u201C\u201D\u201E\u201F]'), '"')
+        // Dashes and hyphens
+        .replaceAll(RegExp(r'[\u2010-\u2015\u2212]'), '-')
+        // Bullets & dots
+        .replaceAll(RegExp(r'[\u2022\u2023\u25E6\u2043\u2219]'), '-')
+        // Ellipsis
+        .replaceAll('\u2026', '...')
+        // Checkmarks & crosses
+        .replaceAll(RegExp(r'[\u2713\u2714]'), '[CORRECT]')
+        .replaceAll(RegExp(r'[\u2717\u2718]'), '[X]')
+        // Non-breaking spaces and other whitespace variations
+        .replaceAll(RegExp(r'[\u00A0\u2000-\u200A\u202F\u205F\u3000]'), ' ')
+        // Math symbols
+        .replaceAll('\u2264', '<=')
+        .replaceAll('\u2265', '>=')
+        .replaceAll('\u2260', '!=')
+        .replaceAll('\u00D7', 'x')
+        .replaceAll('\u00F7', '/')
+        .replaceAll('\u00B1', '+/-')
+        .replaceAll('\u00B0', ' deg')
+        .replaceAll('\u221A', 'sqrt')
+        .replaceAll('\u00B2', '^2')
+        .replaceAll('\u00B3', '^3')
+        .replaceAll('\u03C0', 'pi')
+        .replaceAll('\u00B5', 'u');
+
+    // 2. Strict character safety pass: Helvetica in PDF standard only supports
+    // printable ASCII (32..126) and standard Latin-1 (160..255).
+    // Strip or replace any character code unit > 255 to completely prevent:
+    // "ArgumentError: Invalid argument (The character is not supported by the font.): <CODE>"
+    final buffer = StringBuffer();
+    for (int i = 0; i < s.length; i++) {
+      final code = s.codeUnitAt(i);
+      if (code == 10 || code == 13 || code == 9) {
+        buffer.writeCharCode(code);
+      } else if (code >= 32 && code <= 126) {
+        buffer.writeCharCode(code);
+      } else if (code >= 160 && code <= 255) {
+        buffer.writeCharCode(code);
+      } else {
+        // Unknown or unsupported Unicode glyph: replace with space to prevent PDF crash
+        buffer.write(' ');
+      }
+    }
+    return buffer.toString();
+  }
+
   static Future<String?> generateAndSaveSolutionPdf({
     required Test test,
     required List<Question> questions,
@@ -43,7 +106,7 @@ class PdfExportService {
     // Footer template with page numbering
     final footer = PdfPageTemplateElement(const Rect.fromLTWH(0, 0, 540, 20));
     footer.graphics.drawString(
-      'MCQ Pro — Smart Tests. Strong Outcomes.  •  Confidential Student Report',
+      _cleanText('MCQ Pro - Smart Tests. Strong Outcomes.  |  Confidential Student Report'),
       smallFont,
       brush: PdfSolidBrush(textSecondary),
       bounds: const Rect.fromLTWH(0, 0, 540, 15),
@@ -58,7 +121,7 @@ class PdfExportService {
 
     // Header banner
     graphics.drawString(
-      'MCQ PRO',
+      _cleanText('MCQ PRO'),
       titleFont,
       brush: PdfSolidBrush(primaryColor),
       bounds: Rect.fromLTWH(0, y, page.getClientSize().width, 24),
@@ -67,7 +130,7 @@ class PdfExportService {
     y += 24;
 
     graphics.drawString(
-      'Test Assessment & Detailed Solutions Report',
+      _cleanText('Test Assessment & Detailed Solutions Report'),
       subtitleFont,
       brush: PdfSolidBrush(textDark),
       bounds: Rect.fromLTWH(0, y, page.getClientSize().width, 18),
@@ -90,24 +153,24 @@ class PdfExportService {
     grid.columns[1].width = page.getClientSize().width / 2;
 
     final row1 = grid.rows.add();
-    row1.cells[0].value = 'Student Name: $studentName';
-    row1.cells[1].value = 'Roll Number: $rollNumber';
+    row1.cells[0].value = _cleanText('Student Name: $studentName');
+    row1.cells[1].value = _cleanText('Roll Number: $rollNumber');
 
     final row2 = grid.rows.add();
-    row2.cells[0].value = 'Class & Division: Std ${test.studentClass} - ${test.division ?? "All"}';
-    row2.cells[1].value = 'Medium: ${test.medium.toUpperCase()}';
+    row2.cells[0].value = _cleanText('Class & Division: Std ${test.studentClass} - ${test.division ?? "All"}');
+    row2.cells[1].value = _cleanText('Medium: ${test.medium.toUpperCase()}');
 
     final row3 = grid.rows.add();
-    row3.cells[0].value = 'Subject: ${test.subject}';
-    row3.cells[1].value = 'Topic: ${test.topic}';
+    row3.cells[0].value = _cleanText('Subject: ${test.subject}');
+    row3.cells[1].value = _cleanText('Topic: ${test.topic}');
 
     final row4 = grid.rows.add();
-    row4.cells[0].value = 'Test Code: ${test.testCode ?? "N/A"}';
-    row4.cells[1].value = 'Submission Date: ${DateFormat.yMMMd().add_jm().format(subDate)}';
+    row4.cells[0].value = _cleanText('Test Code: ${test.testCode ?? "N/A"}');
+    row4.cells[1].value = _cleanText('Submission Date: ${DateFormat.yMMMd().add_jm().format(subDate)}');
 
     final row5 = grid.rows.add();
-    row5.cells[0].value = 'Score Obtained: $score / $total ($percentage%)';
-    row5.cells[1].value = 'Performance: ${score >= (total * 0.5) ? "PASSED" : "NEEDS PRACTICE"}';
+    row5.cells[0].value = _cleanText('Score Obtained: $score / $total ($percentage%)');
+    row5.cells[1].value = _cleanText('Performance: ${score >= (total * 0.5) ? "PASSED" : "NEEDS PRACTICE"}');
 
     grid.style.cellPadding = PdfPaddings(left: 6, top: 4, right: 6, bottom: 4);
     grid.style.font = bodyFont;
@@ -125,7 +188,7 @@ class PdfExportService {
     }
 
     graphics.drawString(
-      'QUESTIONS, SELECTED ANSWERS & SOLUTIONS',
+      _cleanText('QUESTIONS, SELECTED ANSWERS & SOLUTIONS'),
       subtitleFont,
       brush: PdfSolidBrush(primaryColor),
       bounds: Rect.fromLTWH(0, y, page.getClientSize().width, 18),
@@ -151,7 +214,7 @@ class PdfExportService {
       PdfColor statusColor = isCorrect ? correctColor : (isUnanswered ? unansweredColor : incorrectColor);
 
       graphics.drawString(
-        'Q${i + 1}. ${q.questionText}',
+        _cleanText('Q${i + 1}. ${q.questionText}'),
         boldFont,
         brush: PdfSolidBrush(textDark),
         bounds: Rect.fromLTWH(0, y, page.getClientSize().width - 90, 30),
@@ -167,17 +230,17 @@ class PdfExportService {
       y += 28;
 
       // Options
-      graphics.drawString('   A) ${q.optionA}', bodyFont, brush: PdfSolidBrush(textSecondary), bounds: Rect.fromLTWH(0, y, page.getClientSize().width, 14));
+      graphics.drawString(_cleanText('   A) ${q.optionA}'), bodyFont, brush: PdfSolidBrush(textSecondary), bounds: Rect.fromLTWH(0, y, page.getClientSize().width, 14));
       y += 14;
-      graphics.drawString('   B) ${q.optionB}', bodyFont, brush: PdfSolidBrush(textSecondary), bounds: Rect.fromLTWH(0, y, page.getClientSize().width, 14));
+      graphics.drawString(_cleanText('   B) ${q.optionB}'), bodyFont, brush: PdfSolidBrush(textSecondary), bounds: Rect.fromLTWH(0, y, page.getClientSize().width, 14));
       y += 14;
-      graphics.drawString('   C) ${q.optionC}', bodyFont, brush: PdfSolidBrush(textSecondary), bounds: Rect.fromLTWH(0, y, page.getClientSize().width, 14));
+      graphics.drawString(_cleanText('   C) ${q.optionC}'), bodyFont, brush: PdfSolidBrush(textSecondary), bounds: Rect.fromLTWH(0, y, page.getClientSize().width, 14));
       y += 14;
-      graphics.drawString('   D) ${q.optionD}', bodyFont, brush: PdfSolidBrush(textSecondary), bounds: Rect.fromLTWH(0, y, page.getClientSize().width, 14));
+      graphics.drawString(_cleanText('   D) ${q.optionD}'), bodyFont, brush: PdfSolidBrush(textSecondary), bounds: Rect.fromLTWH(0, y, page.getClientSize().width, 14));
       y += 16;
 
       // Answers summary line
-      final ansSummary = '   Your Selection: ${userAns ?? "None (Unanswered)"}   |   Correct Answer: Option ${q.correctAnswer}';
+      final ansSummary = _cleanText('   Your Selection: ${userAns ?? "None (Unanswered)"}   |   Correct Answer: Option ${q.correctAnswer}');
       graphics.drawString(
         ansSummary,
         boldFont,
@@ -189,7 +252,7 @@ class PdfExportService {
       // Explanation
       if (q.explanation.isNotEmpty) {
         graphics.drawString(
-          '   Explanation: ${q.explanation}',
+          _cleanText('   Explanation: ${q.explanation}'),
           bodyFont,
           brush: PdfSolidBrush(textSecondary),
           bounds: Rect.fromLTWH(0, y, page.getClientSize().width, 24),
@@ -221,6 +284,14 @@ class PdfExportService {
         allowedExtensions: ['pdf'],
         bytes: Uint8List.fromList(bytes),
       );
+      if (output != null) {
+        try {
+          final file = File(output);
+          if (!file.existsSync() || file.lengthSync() == 0) {
+            await file.writeAsBytes(bytes);
+          }
+        } catch (_) {}
+      }
       return output ?? filename;
     } catch (e) {
       debugPrint('Error saving file: $e');
@@ -251,7 +322,7 @@ class PdfExportService {
 
     final footer = PdfPageTemplateElement(const Rect.fromLTWH(0, 0, 540, 20));
     footer.graphics.drawString(
-      'MCQ Pro — Master Test Archive  •  Standard ${test.studentClass} ${test.medium.toUpperCase()}',
+      _cleanText('MCQ Pro - Master Test Archive  |  Standard ${test.studentClass} ${test.medium.toUpperCase()}'),
       smallFont,
       brush: PdfSolidBrush(textSecondary),
       bounds: const Rect.fromLTWH(0, 0, 540, 15),
@@ -264,7 +335,7 @@ class PdfExportService {
     double y = 10;
 
     graphics.drawString(
-      'MCQ PRO — TEST QUESTION PAPER',
+      _cleanText('MCQ PRO - TEST QUESTION PAPER'),
       titleFont,
       brush: PdfSolidBrush(primaryColor),
       bounds: Rect.fromLTWH(0, y, page.getClientSize().width, 24),
@@ -273,7 +344,7 @@ class PdfExportService {
     y += 24;
 
     graphics.drawString(
-      'Subject: ${test.subject}  |  Topic: ${test.topic}',
+      _cleanText('Subject: ${test.subject}  |  Topic: ${test.topic}'),
       subtitleFont,
       brush: PdfSolidBrush(textDark),
       bounds: Rect.fromLTWH(0, y, page.getClientSize().width, 18),
@@ -294,16 +365,16 @@ class PdfExportService {
     grid.columns[1].width = page.getClientSize().width / 2;
 
     final row1 = grid.rows.add();
-    row1.cells[0].value = 'Class: Standard ${test.studentClass} (${test.division ?? "All"})';
-    row1.cells[1].value = 'Medium: ${test.medium.toUpperCase()}';
+    row1.cells[0].value = _cleanText('Class: Standard ${test.studentClass} (${test.division ?? "All"})');
+    row1.cells[1].value = _cleanText('Medium: ${test.medium.toUpperCase()}');
 
     final row2 = grid.rows.add();
-    row2.cells[0].value = 'Total Questions: ${questions.length}';
-    row2.cells[1].value = 'Duration: ${test.duration} Minutes';
+    row2.cells[0].value = _cleanText('Total Questions: ${questions.length}');
+    row2.cells[1].value = _cleanText('Duration: ${test.duration} Minutes');
 
     final row3 = grid.rows.add();
-    row3.cells[0].value = 'Test Code: ${test.testCode ?? "N/A"}';
-    row3.cells[1].value = 'Date: ${DateFormat("dd MMM yyyy").format(test.createdAt ?? DateTime.now())}';
+    row3.cells[0].value = _cleanText('Test Code: ${test.testCode ?? "N/A"}');
+    row3.cells[1].value = _cleanText('Date: ${DateFormat("dd MMM yyyy").format(test.createdAt ?? DateTime.now())}');
 
     grid.style.cellPadding = PdfPaddings(left: 6, top: 4, right: 6, bottom: 4);
     grid.draw(page: page, bounds: Rect.fromLTWH(0, y, page.getClientSize().width, 0));
@@ -318,7 +389,7 @@ class PdfExportService {
       }
 
       graphics.drawString(
-        'Q${i + 1}. ${q.questionText}',
+        _cleanText('Q${i + 1}. ${q.questionText}'),
         boldFont,
         brush: PdfSolidBrush(textDark),
         bounds: Rect.fromLTWH(0, y, page.getClientSize().width, 30),
@@ -334,7 +405,7 @@ class PdfExportService {
         final font = isCorrect ? boldFont : bodyFont;
 
         graphics.drawString(
-          '  ($optLabel) $optText ${isCorrect ? " ✓ [CORRECT]" : ""}',
+          _cleanText('  ($optLabel) $optText ${isCorrect ? " [CORRECT]" : ""}'),
           font,
           brush: brush,
           bounds: Rect.fromLTWH(0, y, page.getClientSize().width, 16),
@@ -345,7 +416,7 @@ class PdfExportService {
       if (includeAnswerKey && q.explanation.isNotEmpty) {
         y += 4;
         graphics.drawString(
-          '  Explanation: ${q.explanation}',
+          _cleanText('  Explanation: ${q.explanation}'),
           bodyFont,
           brush: PdfSolidBrush(textSecondary),
           bounds: Rect.fromLTWH(0, y, page.getClientSize().width, 24),
@@ -374,6 +445,14 @@ class PdfExportService {
         allowedExtensions: ['pdf'],
         bytes: Uint8List.fromList(bytes),
       );
+      if (output != null) {
+        try {
+          final file = File(output);
+          if (!file.existsSync() || file.lengthSync() == 0) {
+            await file.writeAsBytes(bytes);
+          }
+        } catch (_) {}
+      }
       return output ?? filename;
     } catch (e) {
       debugPrint('Error saving file: $e');

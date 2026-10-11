@@ -30,19 +30,31 @@ class Test {
   });
 
   factory Test.fromMap(Map<String, dynamic> map) {
+    TestStatus parseStatus(dynamic val) {
+      if (val == null) return TestStatus.published;
+      final str = val.toString().toLowerCase();
+      if (str == 'draft') return TestStatus.draft;
+      return TestStatus.published;
+    }
+
+    int parseDuration(dynamic val) {
+      if (val is int) return val;
+      return int.tryParse(val?.toString() ?? '') ?? 30;
+    }
+
     return Test(
-      id: map['id'],
-      testCode: map['test_code'],
-      teacherId: map['teacher_id'],
-      studentClass: map['class'].toString(),
-      division: map['division'],
-      medium: map['medium'],
-      subject: map['subject'],
-      topic: map['topic'],
-      level: map['level'],
-      duration: map['duration'],
-      status: TestStatus.values.firstWhere((e) => e.name == map['status']),
-      createdAt: map['created_at'] != null ? DateTime.parse(map['created_at']) : null,
+      id: map['id']?.toString() ?? '',
+      testCode: map['test_code']?.toString(),
+      teacherId: map['teacher_id']?.toString() ?? '',
+      studentClass: (map['class'] ?? '11').toString(),
+      division: map['division']?.toString(),
+      medium: map['medium']?.toString() ?? 'English',
+      subject: map['subject']?.toString() ?? 'General',
+      topic: map['topic']?.toString() ?? 'Untitled',
+      level: map['level']?.toString() ?? 'Medium',
+      duration: parseDuration(map['duration']),
+      status: parseStatus(map['status']),
+      createdAt: map['created_at'] != null ? DateTime.tryParse(map['created_at'].toString()) : null,
     );
   }
 

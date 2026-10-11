@@ -15,24 +15,29 @@ class SignupScreen extends StatefulWidget {
 }
 
 class _SignupScreenState extends State<SignupScreen> {
+  final _formKey = GlobalKey<FormState>();
+  final _nameController = TextEditingController();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
-  final _nameController = TextEditingController();
+  final _confirmPasswordController = TextEditingController();
 
   String _selectedClass = '11';
   String _selectedDivision = 'A';
   String _selectedMedium = 'English';
   String _selectedGroup = 'Biology';
   String _selectedInstitution = 'Sharda Mandir';
-  String _selectedAcademicYear = '2026-2027';
+  final String _selectedAcademicYear = '2026-2027';
 
   bool _isLoading = false;
+  bool _obscurePassword = true;
+  bool _obscureConfirmPassword = true;
 
   @override
   void dispose() {
+    _nameController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
-    _nameController.dispose();
+    _confirmPasswordController.dispose();
     super.dispose();
   }
 
@@ -44,27 +49,31 @@ class _SignupScreenState extends State<SignupScreen> {
     }
   }
 
-  void _signup() async {
-    final name = _nameController.text.trim();
-    final email = _emailController.text.trim();
-    final password = _passwordController.text;
+  Future<void> _signup() async {
+    if (_isLoading) return;
 
-    if (name.isEmpty || email.isEmpty || password.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please fill all required fields')),
-      );
+    if (!(_formKey.currentState?.validate() ?? false)) {
       return;
     }
 
-    if (password.length < 6) {
+    final name = _nameController.text.trim();
+    final email = _emailController.text.trim().toLowerCase();
+    final password = _passwordController.text;
+    final confirmPassword = _confirmPasswordController.text;
+
+    if (password != confirmPassword) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Password must be at least 6 characters')),
+        const SnackBar(
+          content: Text('Passwords do not match'),
+          backgroundColor: AppColors.error,
+        ),
       );
       return;
     }
 
     setState(() => _isLoading = true);
     try {
+      // Strictly register as role = 'student'
       final res = await SupabaseService().signupStudent(
         email: email,
         password: password,
@@ -78,21 +87,79 @@ class _SignupScreenState extends State<SignupScreen> {
       );
 
       final studentId = res.user?.id;
+      final isEmailConfirmationRequired = res.session == null;
+
       String allocatedRollNo = 'Allocated';
-      if (studentId != null) {
+      if (studentId != null && !isEmailConfirmationRequired) {
         final profile = await SupabaseService().getUserProfile(studentId);
         allocatedRollNo = profile?.rollNo ?? 'Allocated';
       }
 
-      if (mounted) {
-        showDialog(
+      if (!mounted) return;
+
+      if (isEmailConfirmationRequired) {
+        // Supabase Email Confirmation is enabled
+        await showDialog(
           context: context,
           barrierDismissible: false,
           builder: (ctx) => AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
             title: const Row(
               children: [
-                Icon(Icons.check_circle_rounded, color: AppColors.success),
-                SizedBox(width: 8),
+                Icon(Icons.mark_email_read_rounded, color: AppColors.primary, size: 28),
+                SizedBox(width: 10),
+                Text('Verification Sent!'),
+              ],
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Welcome, $name!',
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'A verification email has been sent to $email. Please click the confirmation link in the email to activate your student account, then return to log in.',
+                  style: const TextStyle(fontSize: 13.5, height: 1.4),
+                ),
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppColors.primarySoft,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    'Standard: $_selectedClass - Division: $_selectedDivision ($_selectedMedium Medium)',
+                    style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: AppColors.primary),
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.pop(ctx); // Close dialog
+                  Navigator.pop(context); // Return to login
+                },
+                child: const Text('Back to Login'),
+              ),
+            ],
+          ),
+        );
+      } else {
+        // Direct enrollment complete (instant session)
+        await showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (ctx) => AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            title: const Row(
+              children: [
+                Icon(Icons.check_circle_rounded, color: AppColors.success, size: 28),
+                SizedBox(width: 10),
                 Text('Enrollment Complete!'),
               ],
             ),
@@ -100,8 +167,11 @@ class _SignupScreenState extends State<SignupScreen> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Welcome, $name! Your account has been created.'),
-                const SizedBox(height: 12),
+                Text(
+                  'Welcome, $name! Your student account is ready.',
+                  style: const TextStyle(fontSize: 14),
+                ),
+                const SizedBox(height: 14),
                 Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
@@ -120,7 +190,10 @@ class _SignupScreenState extends State<SignupScreen> {
                   ),
                 ),
                 const SizedBox(height: 12),
-                Text('Standard: $_selectedClass - Division: $_selectedDivision (${_selectedMedium} Medium)'),
+                Text(
+                  'Standard: $_selectedClass - Division: $_selectedDivision ($_selectedMedium Medium)',
+                  style: const TextStyle(fontSize: 12.5, color: AppColors.textSecondary),
+                ),
               ],
             ),
             actions: [
@@ -137,10 +210,25 @@ class _SignupScreenState extends State<SignupScreen> {
       }
     } catch (e) {
       if (mounted) {
+        String msg = e.toString().replaceAll('Exception:', '').trim();
+        if (msg.contains('User already registered') || msg.contains('user_already_exists')) {
+          msg = 'An account with this email address already exists. Please sign in or use another email.';
+        } else if (msg.contains('Password should be at least')) {
+          msg = 'Password is too weak. Please use at least 6 characters.';
+        }
+
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Signup failed: $e'),
+            content: Row(
+              children: [
+                const Icon(Icons.error_outline_rounded, color: Colors.white, size: 20),
+                const SizedBox(width: 10),
+                Expanded(child: Text(msg)),
+              ],
+            ),
             backgroundColor: AppColors.error,
+            behavior: SnackBarBehavior.floating,
+            duration: const Duration(seconds: 4),
           ),
         );
       }
@@ -171,328 +259,410 @@ class _SignupScreenState extends State<SignupScreen> {
           child: AnimatedPage(
             child: SingleChildScrollView(
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const SizedBox(height: 10),
-                  Text(
-                    'Student Registration',
-                    style: Theme.of(context).textTheme.headlineLarge,
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    'Enroll with your class and get an automatic roll number',
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: AppColors.textSecondary,
-                        ),
-                  ),
-                  const SizedBox(height: 24),
-                  AppCard(
-                    padding: const EdgeInsets.all(22),
-                    child: Column(
-                      children: [
-                        TextField(
-                          controller: _nameController,
-                          decoration: const InputDecoration(
-                            hintText: 'Full Name',
-                            prefixIcon: Icon(Icons.person_outline_rounded),
+              child: Form(
+                key: _formKey,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const SizedBox(height: 10),
+                    Text(
+                      'Student Registration',
+                      style: Theme.of(context).textTheme.headlineLarge,
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'Enroll with your class and get an automatic roll number',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            color: AppColors.textSecondary,
                           ),
-                        ),
-                        const SizedBox(height: 14),
-                        TextField(
-                          controller: _emailController,
-                          keyboardType: TextInputType.emailAddress,
-                          decoration: const InputDecoration(
-                            hintText: 'Email address',
-                            prefixIcon: Icon(Icons.alternate_email_rounded),
+                    ),
+                    const SizedBox(height: 24),
+                    AppCard(
+                      padding: const EdgeInsets.all(22),
+                      child: Column(
+                        children: [
+                          // Full Name
+                          TextFormField(
+                            controller: _nameController,
+                            textCapitalization: TextCapitalization.words,
+                            textInputAction: TextInputAction.next,
+                            decoration: const InputDecoration(
+                              labelText: 'Full Name',
+                              hintText: 'Enter student name',
+                              prefixIcon: Icon(Icons.person_outline_rounded),
+                            ),
+                            validator: (val) {
+                              if (val == null || val.trim().isEmpty) {
+                                return 'Please enter your full name';
+                              }
+                              return null;
+                            },
                           ),
-                        ),
-                        const SizedBox(height: 14),
-                        TextField(
-                          controller: _passwordController,
-                          obscureText: true,
-                          decoration: const InputDecoration(
-                            hintText: 'Password',
-                            prefixIcon: Icon(Icons.lock_outline_rounded),
-                          ),
-                        ),
-                        const SizedBox(height: 14),
+                          const SizedBox(height: 14),
 
-                        // Class & Division Row
-                        Row(
-                          children: [
-                            Expanded(
-                              child: DropdownButtonFormField<String>(
-                                isExpanded: true,
-                                value: _selectedClass,
-                                dropdownColor: AppColors.surface,
-                                iconEnabledColor: AppColors.primary,
-                                style: const TextStyle(
-                                  color: AppColors.textPrimary,
-                                  fontSize: 13.5,
-                                  fontWeight: FontWeight.w600,
+                          // Email Address
+                          TextFormField(
+                            controller: _emailController,
+                            keyboardType: TextInputType.emailAddress,
+                            textInputAction: TextInputAction.next,
+                            decoration: const InputDecoration(
+                              labelText: 'Email Address',
+                              hintText: 'student@example.com',
+                              prefixIcon: Icon(Icons.alternate_email_rounded),
+                            ),
+                            validator: (val) {
+                              if (val == null || val.trim().isEmpty) {
+                                return 'Please enter your email address';
+                              }
+                              if (!val.contains('@') || !val.contains('.')) {
+                                return 'Please enter a valid email address';
+                              }
+                              return null;
+                            },
+                          ),
+                          const SizedBox(height: 14),
+
+                          // Password
+                          TextFormField(
+                            controller: _passwordController,
+                            obscureText: _obscurePassword,
+                            textInputAction: TextInputAction.next,
+                            decoration: InputDecoration(
+                              labelText: 'Password',
+                              hintText: 'At least 6 characters',
+                              prefixIcon: const Icon(Icons.lock_outline_rounded),
+                              suffixIcon: IconButton(
+                                icon: Icon(
+                                  _obscurePassword ? Icons.visibility_off_rounded : Icons.visibility_rounded,
+                                  size: 20,
+                                  color: AppColors.textSecondary,
                                 ),
-                                decoration: const InputDecoration(
-                                  labelText: 'Standard',
-                                  labelStyle: TextStyle(color: AppColors.textSecondary, fontSize: 13),
-                                  contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
-                                  prefixIconConstraints: BoxConstraints(minWidth: 36, minHeight: 24),
-                                  prefixIcon: Padding(
-                                    padding: EdgeInsets.only(left: 8, right: 6),
-                                    child: Icon(Icons.school_outlined, size: 18, color: AppColors.primary),
-                                  ),
-                                ),
-                                items: ['11', '12']
-                                    .map((e) => DropdownMenuItem(
-                                          value: e,
-                                          child: Text(
-                                            'Std $e',
-                                            style: const TextStyle(
-                                              color: AppColors.textPrimary,
-                                              fontSize: 13.5,
-                                              fontWeight: FontWeight.w500,
-                                            ),
-                                            overflow: TextOverflow.ellipsis,
-                                            maxLines: 1,
-                                          ),
-                                        ))
-                                    .toList(),
-                                onChanged: (val) {
-                                  setState(() {
-                                    _selectedClass = val!;
-                                    _selectedDivision = _getDivisionsForClass(val).first;
-                                  });
-                                },
+                                onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
                               ),
                             ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: DropdownButtonFormField<String>(
-                                isExpanded: true,
-                                value: _selectedDivision,
-                                dropdownColor: AppColors.surface,
-                                iconEnabledColor: AppColors.primary,
-                                style: const TextStyle(
-                                  color: AppColors.textPrimary,
-                                  fontSize: 13.5,
-                                  fontWeight: FontWeight.w600,
+                            validator: (val) {
+                              if (val == null || val.isEmpty) {
+                                return 'Please enter a password';
+                              }
+                              if (val.length < 6) {
+                                return 'Password must be at least 6 characters';
+                              }
+                              return null;
+                            },
+                          ),
+                          const SizedBox(height: 14),
+
+                          // Confirm Password
+                          TextFormField(
+                            controller: _confirmPasswordController,
+                            obscureText: _obscureConfirmPassword,
+                            textInputAction: TextInputAction.done,
+                            decoration: InputDecoration(
+                              labelText: 'Confirm Password',
+                              hintText: 'Re-enter your password',
+                              prefixIcon: const Icon(Icons.lock_clock_outlined),
+                              suffixIcon: IconButton(
+                                icon: Icon(
+                                  _obscureConfirmPassword ? Icons.visibility_off_rounded : Icons.visibility_rounded,
+                                  size: 20,
+                                  color: AppColors.textSecondary,
                                 ),
-                                decoration: const InputDecoration(
-                                  labelText: 'Division',
-                                  labelStyle: TextStyle(color: AppColors.textSecondary, fontSize: 13),
-                                  contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
-                                  prefixIconConstraints: BoxConstraints(minWidth: 36, minHeight: 24),
-                                  prefixIcon: Padding(
-                                    padding: EdgeInsets.only(left: 8, right: 6),
-                                    child: Icon(Icons.groups_outlined, size: 18, color: AppColors.primary),
-                                  ),
-                                ),
-                                items: availableDivisions
-                                    .map((e) => DropdownMenuItem(
-                                          value: e,
-                                          child: Text(
-                                            'Div $e',
-                                            style: const TextStyle(
-                                              color: AppColors.textPrimary,
-                                              fontSize: 13.5,
-                                              fontWeight: FontWeight.w500,
-                                            ),
-                                            overflow: TextOverflow.ellipsis,
-                                            maxLines: 1,
-                                          ),
-                                        ))
-                                    .toList(),
-                                onChanged: (val) => setState(() => _selectedDivision = val!),
+                                onPressed: () => setState(() => _obscureConfirmPassword = !_obscureConfirmPassword),
                               ),
                             ),
-                          ],
-                        ),
-                        const SizedBox(height: 14),
-
-                        // Medium & Subject Group Row
-                        Row(
-                          children: [
-                            Expanded(
-                              child: DropdownButtonFormField<String>(
-                                isExpanded: true,
-                                value: _selectedMedium,
-                                dropdownColor: AppColors.surface,
-                                iconEnabledColor: AppColors.primary,
-                                style: const TextStyle(
-                                  color: AppColors.textPrimary,
-                                  fontSize: 13.5,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                                decoration: const InputDecoration(
-                                  labelText: 'Medium',
-                                  labelStyle: TextStyle(color: AppColors.textSecondary, fontSize: 13),
-                                  contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
-                                  prefixIconConstraints: BoxConstraints(minWidth: 36, minHeight: 24),
-                                  prefixIcon: Padding(
-                                    padding: EdgeInsets.only(left: 8, right: 6),
-                                    child: Icon(Icons.language_rounded, size: 18, color: AppColors.primary),
-                                  ),
-                                ),
-                                items: ['English', 'Gujarati']
-                                    .map((e) => DropdownMenuItem(
-                                          value: e,
-                                          child: Text(
-                                            e,
-                                            style: const TextStyle(
-                                              color: AppColors.textPrimary,
-                                              fontSize: 13.5,
-                                              fontWeight: FontWeight.w500,
-                                            ),
-                                            overflow: TextOverflow.ellipsis,
-                                            maxLines: 1,
-                                          ),
-                                        ))
-                                    .toList(),
-                                onChanged: (val) => setState(() => _selectedMedium = val!),
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: DropdownButtonFormField<String>(
-                                isExpanded: true,
-                                value: _selectedGroup,
-                                dropdownColor: AppColors.surface,
-                                iconEnabledColor: AppColors.primary,
-                                style: const TextStyle(
-                                  color: AppColors.textPrimary,
-                                  fontSize: 13.5,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                                decoration: const InputDecoration(
-                                  labelText: 'Group',
-                                  labelStyle: TextStyle(color: AppColors.textSecondary, fontSize: 13),
-                                  contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
-                                  prefixIconConstraints: BoxConstraints(minWidth: 36, minHeight: 24),
-                                  prefixIcon: Padding(
-                                    padding: EdgeInsets.only(left: 8, right: 6),
-                                    child: Icon(Icons.science_outlined, size: 18, color: AppColors.primary),
-                                  ),
-                                ),
-                                items: ['Biology', 'Maths']
-                                    .map((e) => DropdownMenuItem(
-                                          value: e,
-                                          child: Text(
-                                            e,
-                                            style: const TextStyle(
-                                              color: AppColors.textPrimary,
-                                              fontSize: 13.5,
-                                              fontWeight: FontWeight.w500,
-                                            ),
-                                            overflow: TextOverflow.ellipsis,
-                                            maxLines: 1,
-                                          ),
-                                        ))
-                                    .toList(),
-                                onChanged: (val) => setState(() => _selectedGroup = val!),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 14),
-
-                        // Institution
-                        DropdownButtonFormField<String>(
-                          isExpanded: true,
-                          value: _selectedInstitution,
-                          dropdownColor: AppColors.surface,
-                          iconEnabledColor: AppColors.primary,
-                          style: const TextStyle(
-                            color: AppColors.textPrimary,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
+                            validator: (val) {
+                              if (val == null || val.isEmpty) {
+                                return 'Please confirm your password';
+                              }
+                              if (val != _passwordController.text) {
+                                return 'Passwords do not match';
+                              }
+                              return null;
+                            },
                           ),
-                          decoration: const InputDecoration(
-                            labelText: 'Institution',
-                            labelStyle: TextStyle(color: AppColors.textSecondary),
-                            contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                            prefixIconConstraints: BoxConstraints(minWidth: 40, minHeight: 24),
-                            prefixIcon: Padding(
-                              padding: EdgeInsets.only(left: 10, right: 8),
-                              child: Icon(Icons.account_balance_outlined, size: 20, color: AppColors.primary),
-                            ),
-                          ),
-                          items: ['Sharda Mandir', 'Tuition ACC']
-                              .map((e) => DropdownMenuItem(
-                                    value: e,
-                                    child: Text(
-                                      e,
-                                      style: const TextStyle(
-                                        color: AppColors.textPrimary,
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.w500,
-                                      ),
-                                      overflow: TextOverflow.ellipsis,
-                                      maxLines: 1,
-                                    ),
-                                  ))
-                              .toList(),
-                          onChanged: (val) => setState(() => _selectedInstitution = val!),
-                        ),
-                        const SizedBox(height: 16),
+                          const SizedBox(height: 16),
 
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                          decoration: BoxDecoration(
-                            color: AppColors.primarySoft,
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: const Row(
+                          // Class & Division Row
+                          Row(
                             children: [
-                              Icon(Icons.info_outline_rounded, size: 16, color: AppColors.primary),
-                              SizedBox(width: 8),
                               Expanded(
-                                child: Text(
-                                  'Your official Roll Number will be generated automatically upon registration.',
-                                  style: TextStyle(fontSize: 11.5, color: AppColors.primary, fontWeight: FontWeight.w600),
+                                child: DropdownButtonFormField<String>(
+                                  isExpanded: true,
+                                  value: _selectedClass,
+                                  dropdownColor: AppColors.surface,
+                                  iconEnabledColor: AppColors.primary,
+                                  style: const TextStyle(
+                                    color: AppColors.textPrimary,
+                                    fontSize: 13.5,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                  decoration: const InputDecoration(
+                                    labelText: 'Standard',
+                                    labelStyle: TextStyle(color: AppColors.textSecondary, fontSize: 13),
+                                    contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+                                    prefixIconConstraints: BoxConstraints(minWidth: 36, minHeight: 24),
+                                    prefixIcon: Padding(
+                                      padding: EdgeInsets.only(left: 8, right: 6),
+                                      child: Icon(Icons.school_outlined, size: 18, color: AppColors.primary),
+                                    ),
+                                  ),
+                                  items: ['11', '12']
+                                      .map((e) => DropdownMenuItem(
+                                            value: e,
+                                            child: Text(
+                                              'Std $e',
+                                              style: const TextStyle(
+                                                color: AppColors.textPrimary,
+                                                fontSize: 13.5,
+                                                fontWeight: FontWeight.w500,
+                                              ),
+                                              overflow: TextOverflow.ellipsis,
+                                              maxLines: 1,
+                                            ),
+                                          ))
+                                      .toList(),
+                                  onChanged: (val) {
+                                    setState(() {
+                                      _selectedClass = val!;
+                                      _selectedDivision = _getDivisionsForClass(val).first;
+                                    });
+                                  },
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: DropdownButtonFormField<String>(
+                                  isExpanded: true,
+                                  value: _selectedDivision,
+                                  dropdownColor: AppColors.surface,
+                                  iconEnabledColor: AppColors.primary,
+                                  style: const TextStyle(
+                                    color: AppColors.textPrimary,
+                                    fontSize: 13.5,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                  decoration: const InputDecoration(
+                                    labelText: 'Division',
+                                    labelStyle: TextStyle(color: AppColors.textSecondary, fontSize: 13),
+                                    contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+                                    prefixIconConstraints: BoxConstraints(minWidth: 36, minHeight: 24),
+                                    prefixIcon: Padding(
+                                      padding: EdgeInsets.only(left: 8, right: 6),
+                                      child: Icon(Icons.groups_outlined, size: 18, color: AppColors.primary),
+                                    ),
+                                  ),
+                                  items: availableDivisions
+                                      .map((e) => DropdownMenuItem(
+                                            value: e,
+                                            child: Text(
+                                              'Div $e',
+                                              style: const TextStyle(
+                                                color: AppColors.textPrimary,
+                                                fontSize: 13.5,
+                                                fontWeight: FontWeight.w500,
+                                              ),
+                                              overflow: TextOverflow.ellipsis,
+                                              maxLines: 1,
+                                            ),
+                                          ))
+                                      .toList(),
+                                  onChanged: (val) => setState(() => _selectedDivision = val!),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 14),
+
+                          // Medium & Subject Group Row
+                          Row(
+                            children: [
+                              Expanded(
+                                child: DropdownButtonFormField<String>(
+                                  isExpanded: true,
+                                  value: _selectedMedium,
+                                  dropdownColor: AppColors.surface,
+                                  iconEnabledColor: AppColors.primary,
+                                  style: const TextStyle(
+                                    color: AppColors.textPrimary,
+                                    fontSize: 13.5,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                  decoration: const InputDecoration(
+                                    labelText: 'Medium',
+                                    labelStyle: TextStyle(color: AppColors.textSecondary, fontSize: 13),
+                                    contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+                                    prefixIconConstraints: BoxConstraints(minWidth: 36, minHeight: 24),
+                                    prefixIcon: Padding(
+                                      padding: EdgeInsets.only(left: 8, right: 6),
+                                      child: Icon(Icons.language_rounded, size: 18, color: AppColors.primary),
+                                    ),
+                                  ),
+                                  items: ['English', 'Gujarati']
+                                      .map((e) => DropdownMenuItem(
+                                            value: e,
+                                            child: Text(
+                                              e,
+                                              style: const TextStyle(
+                                                color: AppColors.textPrimary,
+                                                fontSize: 13.5,
+                                                fontWeight: FontWeight.w500,
+                                              ),
+                                              overflow: TextOverflow.ellipsis,
+                                              maxLines: 1,
+                                            ),
+                                          ))
+                                      .toList(),
+                                  onChanged: (val) => setState(() => _selectedMedium = val!),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: DropdownButtonFormField<String>(
+                                  isExpanded: true,
+                                  value: _selectedGroup,
+                                  dropdownColor: AppColors.surface,
+                                  iconEnabledColor: AppColors.primary,
+                                  style: const TextStyle(
+                                    color: AppColors.textPrimary,
+                                    fontSize: 13.5,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                  decoration: const InputDecoration(
+                                    labelText: 'Group',
+                                    labelStyle: TextStyle(color: AppColors.textSecondary, fontSize: 13),
+                                    contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+                                    prefixIconConstraints: BoxConstraints(minWidth: 36, minHeight: 24),
+                                    prefixIcon: Padding(
+                                      padding: EdgeInsets.only(left: 8, right: 6),
+                                      child: Icon(Icons.science_outlined, size: 18, color: AppColors.primary),
+                                    ),
+                                  ),
+                                  items: ['Biology', 'Maths']
+                                      .map((e) => DropdownMenuItem(
+                                            value: e,
+                                            child: Text(
+                                              e,
+                                              style: const TextStyle(
+                                                color: AppColors.textPrimary,
+                                                fontSize: 13.5,
+                                                fontWeight: FontWeight.w500,
+                                              ),
+                                              overflow: TextOverflow.ellipsis,
+                                              maxLines: 1,
+                                            ),
+                                          ))
+                                      .toList(),
+                                  onChanged: (val) => setState(() => _selectedGroup = val!),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 14),
+
+                          // Institution
+                          DropdownButtonFormField<String>(
+                            isExpanded: true,
+                            value: _selectedInstitution,
+                            dropdownColor: AppColors.surface,
+                            iconEnabledColor: AppColors.primary,
+                            style: const TextStyle(
+                              color: AppColors.textPrimary,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                            ),
+                            decoration: const InputDecoration(
+                              labelText: 'Institution',
+                              labelStyle: TextStyle(color: AppColors.textSecondary),
+                              contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                              prefixIconConstraints: BoxConstraints(minWidth: 40, minHeight: 24),
+                              prefixIcon: Padding(
+                                padding: EdgeInsets.only(left: 10, right: 8),
+                                child: Icon(Icons.account_balance_outlined, size: 20, color: AppColors.primary),
+                              ),
+                            ),
+                            items: ['Sharda Mandir', 'Tuition ACC']
+                                .map((e) => DropdownMenuItem(
+                                      value: e,
+                                      child: Text(
+                                        e,
+                                        style: const TextStyle(
+                                          color: AppColors.textPrimary,
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                        overflow: TextOverflow.ellipsis,
+                                        maxLines: 1,
+                                      ),
+                                    ))
+                                .toList(),
+                            onChanged: (val) => setState(() => _selectedInstitution = val!),
+                          ),
+                          const SizedBox(height: 16),
+
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            decoration: BoxDecoration(
+                              color: AppColors.primarySoft,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: const Row(
+                              children: [
+                                Icon(Icons.info_outline_rounded, size: 16, color: AppColors.primary),
+                                SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    'Your official Roll Number will be generated automatically upon registration.',
+                                    style: TextStyle(fontSize: 11.5, color: AppColors.primary, fontWeight: FontWeight.w600),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 24),
+
+                          SizedBox(
+                            width: double.infinity,
+                            height: 48,
+                            child: ElevatedButton(
+                              onPressed: _isLoading ? null : _signup,
+                              style: ElevatedButton.styleFrom(
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              ),
+                              child: _isLoading
+                                  ? const SpinKitThreeBounce(color: Colors.white, size: 20)
+                                  : const Text('Complete Registration', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    Center(
+                      child: TextButton(
+                        onPressed: () => Navigator.pop(context),
+                        child: RichText(
+                          text: TextSpan(
+                            text: 'Already registered? ',
+                            style: TextStyle(
+                              color: AppColors.textSecondary,
+                              fontFamily: GoogleFonts.outfit().fontFamily,
+                            ),
+                            children: const [
+                              TextSpan(
+                                text: 'Sign In',
+                                style: TextStyle(
+                                  color: AppColors.primary,
+                                  fontWeight: FontWeight.bold,
                                 ),
                               ),
                             ],
                           ),
                         ),
-                        const SizedBox(height: 24),
-
-                        SizedBox(
-                          width: double.infinity,
-                          child: ElevatedButton(
-                            onPressed: _isLoading ? null : _signup,
-                            child: _isLoading
-                                ? const SpinKitThreeBounce(color: Colors.white, size: 20)
-                                : const Text('Complete Registration'),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  Center(
-                    child: TextButton(
-                      onPressed: () => Navigator.pop(context),
-                      child: RichText(
-                        text: TextSpan(
-                          text: "Already registered? ",
-                          style: TextStyle(
-                            color: AppColors.textSecondary,
-                            fontFamily: GoogleFonts.outfit().fontFamily,
-                          ),
-                          children: const [
-                            TextSpan(
-                              text: "Sign In",
-                              style: TextStyle(
-                                color: AppColors.primary,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ],
-                        ),
                       ),
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 16),
+                  ],
+                ),
               ),
             ),
           ),

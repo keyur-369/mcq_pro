@@ -43,26 +43,34 @@ class HistoryScreen extends StatelessWidget {
                 itemCount: attempts.length,
                 itemBuilder: (context, index) {
                   final attempt = attempts[index];
-                  final testData = attempt['tests']; // Joined test data
+                  dynamic rawTestData = attempt['tests'];
+                  Map<String, dynamic>? testData;
+                  if (rawTestData is Map<String, dynamic>) {
+                    testData = rawTestData;
+                  } else if (rawTestData is List && rawTestData.isNotEmpty && rawTestData.first is Map<String, dynamic>) {
+                    testData = rawTestData.first as Map<String, dynamic>;
+                  }
 
                   // Handle case where test data might be missing (deleted test)
                   if (testData == null) {
                     return const SizedBox.shrink();
                   }
 
-                  final attemptId = attempt['id'] as String;
-                  final testId = testData['id'] as String;
-                  final subject = testData['subject'] as String? ?? 'Unknown Subject';
-                  final topic = testData['topic'] as String? ?? 'Unknown Topic';
-                  final score = attempt['score'] as int? ?? 0;
-                  final submittedAtStr = attempt['submitted_at'] as String?;
+                  final attemptId = attempt['id']?.toString() ?? '';
+                  final testId = testData['id']?.toString() ?? '';
+                  final subject = testData['subject']?.toString() ?? 'Unknown Subject';
+                  final topic = testData['topic']?.toString() ?? 'Unknown Topic';
+                  final score = (attempt['score'] is int)
+                      ? attempt['score'] as int
+                      : (int.tryParse(attempt['score']?.toString() ?? '') ?? 0);
+                  final submittedAtStr = attempt['submitted_at']?.toString();
 
                   DateTime? submittedAt;
                   if (submittedAtStr != null) {
                     submittedAt = DateTime.tryParse(submittedAtStr);
                   }
 
-                  final testModel = testData is Map<String, dynamic> ? Test.fromMap(testData) : null;
+                  final testModel = Test.fromMap(testData);
 
                   return Card(
                     margin: const EdgeInsets.only(bottom: 16),

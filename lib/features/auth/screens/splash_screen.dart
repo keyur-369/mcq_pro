@@ -41,25 +41,30 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
       final profile = await SupabaseService().getUserProfile(user.id);
       if (mounted) {
         if (profile == null) {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (_) => const LoginScreen()),
-          );
+          await SupabaseService().logout();
+          if (mounted) {
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(builder: (_) => const LoginScreen()),
+            );
+          }
           return;
         }
 
         if (!profile.isActive) {
           await SupabaseService().logout();
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Your account has been deactivated. Please contact administrator.'),
-              backgroundColor: AppColors.error,
-            ),
-          );
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (_) => const LoginScreen()),
-          );
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Your account has been deactivated. Please contact administrator.'),
+                backgroundColor: AppColors.error,
+              ),
+            );
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(builder: (_) => const LoginScreen()),
+            );
+          }
           return;
         }
 
@@ -79,13 +84,21 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
         } else if (profile.isTeacher) {
           Navigator.pushReplacement(
             context,
-            MaterialPageRoute(builder: (_) => const TeacherDashboard()),
+            MaterialPageRoute(builder: (_) => TeacherDashboard(user: profile)),
           );
-        } else {
+        } else if (profile.isStudent) {
           Navigator.pushReplacement(
             context,
-            MaterialPageRoute(builder: (_) => const StudentDashboard()),
+            MaterialPageRoute(builder: (_) => StudentDashboard(user: profile)),
           );
+        } else {
+          await SupabaseService().logout();
+          if (mounted) {
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(builder: (_) => const LoginScreen()),
+            );
+          }
         }
       }
     } else {

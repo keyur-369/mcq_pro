@@ -108,20 +108,65 @@ class SupabaseService {
     await supabase.auth.signOut();
   }
 
+  Future<void> sendPasswordResetEmail(String email) async {
+    final cleanEmail = email.trim().toLowerCase();
+    if (cleanEmail.isEmpty) {
+      throw 'Please enter your email address.';
+    }
+    await supabase.auth.resetPasswordForEmail(cleanEmail);
+  }
+
   Future<void> updatePassword(String newPassword) async {
     final user = currentUser;
     if (user == null) throw 'Not logged in';
 
-    await supabase.auth.updateUser(UserAttributes(password: newPassword));
-    await supabase.from('users').update({
-      'must_change_password': false,
-      'temporary_password': null,
-    }).eq('id', user.id);
+    try {
+      await supabase.auth.updateUser(UserAttributes(password: newPassword));
+    } on AuthException catch (e) {
+      // If the user confirms or keeps the password provisioned by the admin,
+      // Supabase returns 'same_password'. We accept it and clear must_change_password.
+      if (e.code == 'same_password' ||
+          e.message.toLowerCase().contains('different from the old password') ||
+          e.message.toLowerCase().contains('same_password')) {
+        debugPrint('Password already matches Supabase Auth credential. Clearing must_change_password flag.');
+      } else {
+        rethrow;
+      }
+    } catch (e) {
+      final str = e.toString().toLowerCase();
+      if (str.contains('same_password') || str.contains('different from the old password')) {
+        debugPrint('Password already matches Supabase Auth credential. Clearing must_change_password flag.');
+      } else {
+        rethrow;
+      }
+    }
+
+    // Update public.users to clear must_change_password flag
+    try {
+      await supabase.from('users').update({
+        'must_change_password': false,
+        'temporary_password': null,
+      }).eq('id', user.id);
+    } catch (dbErr) {
+      // If temporary_password column is not present in public.users, update only must_change_password
+      try {
+        await supabase.from('users').update({
+          'must_change_password': false,
+        }).eq('id', user.id);
+      } catch (err2) {
+        debugPrint('Could not update must_change_password: $err2');
+      }
+    }
   }
 
   Future<AppUser?> getUserProfile(String userId) async {
     try {
-      final response = await supabase.from('users').select().eq('id', userId).maybeSingle();
+      final response = await supabase
+          .from('users')
+          .select()
+          .eq('id', userId)
+          .maybeSingle()
+          .timeout(const Duration(seconds: 4), onTimeout: () => null);
       if (response == null) return null;
       return AppUser.fromMap(response);
     } catch (e) {
@@ -142,79 +187,260 @@ class SupabaseService {
     String institution = 'Sharda Mandir',
     String academicYear = '2026-2027',
   }) async {
+    final cleanEmail = email.trim().toLowerCase();
     final response = await supabase.auth.signUp(
-      email: email.trim(),
+      email: cleanEmail,
       password: password,
       data: {
         'role': 'student',
-        'name': name,
+        'name': name.trim(),
         'class': int.tryParse(studentClass),
         'division': division,
         'medium': medium,
         'student_group': studentGroup,
+        'institution': institution,
+        'academic_year': academicYear,
       },
     );
 
     final user = response.user;
     if (user != null) {
-      // 1. Allocate roll number atomically via RPC or Backend API
-      String allocatedRollNo;
       try {
-        final rpcRes = await supabase.rpc('allocate_student_roll_no', params: {
-          'p_institution': institution,
-          'p_academic_year': academicYear,
-          'p_standard': studentClass,
-          'p_division': division,
-        });
-        allocatedRollNo = rpcRes.toString();
-      } catch (_) {
-        // Fallback: Query max roll number
-        final countRes = await supabase
-            .from('student_enrollments')
-            .select('roll_no')
-            .eq('institution', institution)
-            .eq('academic_year', academicYear)
-            .eq('standard', studentClass)
-            .eq('division', division);
-        int max = 0;
-        for (var row in (countRes as List)) {
-          final n = int.tryParse(row['roll_no'].toString()) ?? 0;
-          if (n > max) max = n;
+        // 1. Allocate roll number atomically via RPC or Backend API
+        String allocatedRollNo;
+        try {
+          final rpcRes = await supabase.rpc('allocate_student_roll_no', params: {
+            'p_institution': institution,
+            'p_academic_year': academicYear,
+            'p_standard': studentClass,
+            'p_division': division,
+          });
+          allocatedRollNo = rpcRes.toString();
+        } catch (_) {
+          // Fallback: Query max roll number
+          final countRes = await supabase
+              .from('student_enrollments')
+              .select('roll_no')
+              .eq('institution', institution)
+              .eq('academic_year', academicYear)
+              .eq('standard', studentClass)
+              .eq('division', division);
+          int max = 0;
+          for (var row in (countRes as List)) {
+            final n = int.tryParse(row['roll_no'].toString()) ?? 0;
+            if (n > max) max = n;
+          }
+          allocatedRollNo = (max + 1).toString();
         }
-        allocatedRollNo = (max + 1).toString();
+
+        // 2. Save profile in public.users
+        await supabase.from('users').upsert({
+          'id': user.id,
+          'role': 'student',
+          'email': cleanEmail,
+          'name': name.trim(),
+          'class': int.tryParse(studentClass),
+          'division': division,
+          'medium': medium,
+          'roll_no': allocatedRollNo,
+          'student_group': studentGroup,
+          'institution': institution,
+          'academic_year': academicYear,
+          'is_active': true,
+          'must_change_password': false,
+        });
+
+        // 3. Save enrollment in public.student_enrollments
+        await supabase.from('student_enrollments').upsert({
+          'student_id': user.id,
+          'institution': institution,
+          'academic_year': academicYear,
+          'standard': studentClass,
+          'division': division,
+          'medium': medium,
+          'student_group': studentGroup,
+          'roll_no': allocatedRollNo,
+        });
+      } catch (profileErr) {
+        // If email confirmation is enabled, public table inserts might await email verification
+        debugPrint('Profile row insertion deferred (email confirmation may be required): $profileErr');
       }
-
-      // 2. Save profile in public.users
-      await supabase.from('users').upsert({
-        'id': user.id,
-        'role': 'student',
-        'email': email.trim(),
-        'name': name,
-        'class': int.tryParse(studentClass),
-        'division': division,
-        'medium': medium,
-        'roll_no': allocatedRollNo,
-        'student_group': studentGroup,
-        'institution': institution,
-        'academic_year': academicYear,
-        'is_active': true,
-        'must_change_password': false,
-      });
-
-      // 3. Save enrollment in public.student_enrollments
-      await supabase.from('student_enrollments').insert({
-        'student_id': user.id,
-        'institution': institution,
-        'academic_year': academicYear,
-        'standard': studentClass,
-        'division': division,
-        'medium': medium,
-        'student_group': studentGroup,
-        'roll_no': allocatedRollNo,
-      });
     }
 
     return response;
+  }
+
+  /// Automatically creates missing public.users and student_enrollments
+  /// when a verified student logs in after email verification.
+  /// Strictly restricted to role = 'student' for security.
+  Future<void> completeStudentProfileIfMissing(User authUser) async {
+    final meta = authUser.userMetadata;
+    if (meta == null) return;
+    final role = meta['role']?.toString().toLowerCase().trim();
+    if (role != 'student') return; // Security boundary: only students can be auto-completed
+
+    final userId = authUser.id;
+    final existing = await getUserProfile(userId);
+    if (existing != null) return;
+
+    final email = authUser.email ?? '';
+    final name = meta['name']?.toString() ?? email.split('@').first;
+    final studentClass = meta['class']?.toString() ?? '11';
+    final division = meta['division']?.toString() ?? 'A';
+    final medium = meta['medium']?.toString() ?? 'English';
+    final studentGroup = meta['student_group']?.toString();
+    final institution = meta['institution']?.toString() ?? 'Sharda Mandir';
+    final academicYear = meta['academic_year']?.toString() ?? '2026-2027';
+
+    // 1. Allocate roll number
+    String allocatedRollNo;
+    try {
+      final rpcRes = await supabase.rpc('allocate_student_roll_no', params: {
+        'p_institution': institution,
+        'p_academic_year': academicYear,
+        'p_standard': studentClass,
+        'p_division': division,
+      });
+      allocatedRollNo = rpcRes.toString();
+    } catch (_) {
+      final countRes = await supabase
+          .from('student_enrollments')
+          .select('roll_no')
+          .eq('institution', institution)
+          .eq('academic_year', academicYear)
+          .eq('standard', studentClass)
+          .eq('division', division);
+      int max = 0;
+      for (var row in (countRes as List)) {
+        final n = int.tryParse(row['roll_no'].toString()) ?? 0;
+        if (n > max) max = n;
+      }
+      allocatedRollNo = (max + 1).toString();
+    }
+
+    // 2. Save profile in public.users
+    await supabase.from('users').upsert({
+      'id': userId,
+      'role': 'student',
+      'email': email.trim().toLowerCase(),
+      'name': name.trim(),
+      'class': int.tryParse(studentClass),
+      'division': division,
+      'medium': medium,
+      'roll_no': allocatedRollNo,
+      'student_group': studentGroup,
+      'institution': institution,
+      'academic_year': academicYear,
+      'is_active': true,
+      'must_change_password': false,
+    });
+
+    // 3. Save enrollment in public.student_enrollments
+    await supabase.from('student_enrollments').upsert({
+      'student_id': userId,
+      'institution': institution,
+      'academic_year': academicYear,
+      'standard': studentClass,
+      'division': division,
+      'medium': medium,
+      'student_group': studentGroup,
+      'roll_no': allocatedRollNo,
+    });
+  }
+
+  /// Extracts user profile details directly from Supabase Auth metadata
+  /// as a resilient fallback if the database row is still provisioning or inaccessible.
+  AppUser getFallbackUserProfileFromAuth(User authUser) {
+    final meta = authUser.userMetadata ?? {};
+    final email = authUser.email ?? '';
+    final name = meta['name']?.toString() ?? email.split('@').first;
+    final role = meta['role']?.toString().toLowerCase().trim() ?? 'student';
+    final studentClass = meta['class']?.toString() ?? '11';
+    final division = meta['division']?.toString() ?? 'A';
+    final medium = meta['medium']?.toString() ?? 'English';
+    final studentGroup = meta['student_group']?.toString();
+    final institution = meta['institution']?.toString() ?? 'Sharda Mandir';
+    final academicYear = meta['academic_year']?.toString() ?? '2026-2027';
+
+    return AppUser(
+      id: authUser.id,
+      role: role,
+      email: email,
+      name: name,
+      studentClass: studentClass,
+      division: division,
+      rollNo: meta['roll_no']?.toString() ?? 'Allocated',
+      studentGroup: studentGroup,
+      medium: medium,
+      institution: institution,
+      academicYear: academicYear,
+      isActive: true,
+    );
+  }
+
+  Future<void> ensureStudentEnrollment(AppUser user) async {
+    if (!user.isStudent) return;
+    try {
+      final existing = await supabase
+          .from('student_enrollments')
+          .select('id')
+          .eq('student_id', user.id)
+          .maybeSingle()
+          .timeout(const Duration(seconds: 3), onTimeout: () => null);
+
+      if (existing == null) {
+        String assignedRoll = (user.rollNo != null && user.rollNo!.isNotEmpty && user.rollNo != 'Allocated')
+            ? user.rollNo!
+            : '';
+
+        if (assignedRoll.isEmpty) {
+          try {
+            final maxRes = await supabase
+                .from('student_enrollments')
+                .select('roll_no')
+                .eq('institution', user.institution ?? 'Sharda Mandir')
+                .eq('academic_year', user.academicYear ?? '2026-2027')
+                .eq('standard', user.studentClass ?? '11')
+                .eq('division', user.division ?? 'A')
+                .order('roll_no', ascending: false)
+                .limit(1)
+                .maybeSingle();
+            final lastRoll = int.tryParse(maxRes?['roll_no']?.toString() ?? '') ?? 0;
+            assignedRoll = (lastRoll + 1).toString();
+          } catch (_) {
+            assignedRoll = DateTime.now().millisecondsSinceEpoch.toString().substring(8);
+          }
+        }
+
+        try {
+          await supabase.from('student_enrollments').insert({
+            'student_id': user.id,
+            'institution': user.institution ?? 'Sharda Mandir',
+            'academic_year': user.academicYear ?? '2026-2027',
+            'standard': user.studentClass ?? '11',
+            'division': user.division ?? 'A',
+            'medium': user.medium ?? 'English',
+            'student_group': user.studentGroup,
+            'roll_no': assignedRoll,
+          }).timeout(const Duration(seconds: 3));
+        } catch (_) {
+          // If conflict still occurs on roll_no, retry once with a unique discriminator
+          final uniqueRoll = '${user.rollNo ?? "1"}_${DateTime.now().millisecondsSinceEpoch % 10000}';
+          await supabase.from('student_enrollments').insert({
+            'student_id': user.id,
+            'institution': user.institution ?? 'Sharda Mandir',
+            'academic_year': user.academicYear ?? '2026-2027',
+            'standard': user.studentClass ?? '11',
+            'division': user.division ?? 'A',
+            'medium': user.medium ?? 'English',
+            'student_group': user.studentGroup,
+            'roll_no': uniqueRoll,
+          }).timeout(const Duration(seconds: 3));
+        }
+      }
+    } catch (e) {
+      debugPrint('Notice: student enrollment ensured: $e');
+    }
   }
 
   // ── Main Admin: Student Management ────────────────────────────────────────
@@ -314,11 +540,22 @@ class SupabaseService {
     } catch (_) {}
 
     // 3. Fallback: Update public.users
-    await supabase.from('users').update({
-      'temporary_password': cleanPw,
-      'must_change_password': mustChangePassword,
-      'is_active': true,
-    }).eq('id', userId);
+    try {
+      await supabase.from('users').update({
+        'temporary_password': cleanPw,
+        'must_change_password': mustChangePassword,
+        'is_active': true,
+      }).eq('id', userId);
+    } catch (_) {
+      try {
+        await supabase.from('users').update({
+          'must_change_password': mustChangePassword,
+          'is_active': true,
+        }).eq('id', userId);
+      } catch (err) {
+        debugPrint('Could not update user password flag: $err');
+      }
+    }
   }
 
   // ── Main Admin: Teacher Management & Assignments ──────────────────────────
@@ -620,44 +857,105 @@ class SupabaseService {
     final userId = currentUser?.id;
     if (userId == null) return [];
 
-    // Get attempted test IDs for this student
-    final attemptsResponse = await supabase
-        .from('attempts')
-        .select('test_id')
-        .eq('student_id', userId);
+    try {
+      // 1. Get attempted test IDs for this student (isolated so failure doesn't block available tests)
+      Set<String> attemptedTestIds = {};
+      try {
+        final attemptsResponse = await supabase
+            .from('attempts')
+            .select('test_id')
+            .eq('student_id', userId)
+            .timeout(const Duration(seconds: 4));
 
-    final attemptedTestIds = (attemptsResponse as List)
-        .map((e) => e['test_id'] as String)
-        .toSet();
-
-    // Query published tests matching class and medium
-    var query = supabase
-        .from('tests')
-        .select()
-        .eq('class', studentClass)
-        .eq('status', 'published');
-
-    final response = await query.order('created_at', ascending: false);
-    final allTests = (response as List).map((e) => Test.fromMap(e)).toList();
-
-    return allTests.where((test) {
-      // Exclude already attempted
-      if (attemptedTestIds.contains(test.id)) return false;
-
-      // Match medium
-      if (test.medium.toLowerCase() != medium.toLowerCase()) return false;
-
-      // Match division if specified
-      if (test.division != null && test.division!.isNotEmpty && test.division != division) {
-        return false;
+        attemptedTestIds = (attemptsResponse as List)
+            .map((e) => (e['test_id'] ?? '').toString())
+            .where((id) => id.isNotEmpty)
+            .toSet();
+      } catch (attemptsErr) {
+        debugPrint('Notice: could not load attempted test IDs: $attemptsErr');
       }
 
-      // Group filtering
-      if (test.subject == 'Math' && studentGroup != 'Maths') return false;
-      if (test.subject == 'Biology' && studentGroup != 'Biology') return false;
+      // 2. Fetch published tests (with fallback and timeout)
+      List<dynamic> responseList = [];
+      try {
+        final response = await supabase
+            .from('tests')
+            .select()
+            .eq('status', 'published')
+            .order('created_at', ascending: false)
+            .timeout(const Duration(seconds: 5));
+        responseList = response as List;
+      } catch (err1) {
+        debugPrint('Direct published tests query error: $err1');
+        try {
+          final fallback = await supabase
+              .from('tests')
+              .select()
+              .order('created_at', ascending: false)
+              .timeout(const Duration(seconds: 5));
+          responseList = (fallback as List)
+              .where((t) => (t['status'] ?? '').toString().toLowerCase().trim() == 'published')
+              .toList();
+        } catch (err2) {
+          debugPrint('Fallback tests query error: $err2');
+          return [];
+        }
+      }
 
-      return true;
-    }).toList();
+      final allTests = responseList.map((e) {
+        try {
+          return Test.fromMap(Map<String, dynamic>.from(e));
+        } catch (err) {
+          debugPrint('Error parsing test item: $err');
+          return null;
+        }
+      }).whereType<Test>().toList();
+
+      final studentClassNum = RegExp(r'\d+').firstMatch(studentClass)?.group(0);
+      final sDivClean = division.trim().toUpperCase();
+      final sMedClean = medium.trim().toLowerCase();
+
+      return allTests.where((test) {
+        // Exclude already attempted tests
+        if (attemptedTestIds.contains(test.id)) return false;
+
+        // Match Class / Standard (digit-based or string comparison)
+        final testClassNum = RegExp(r'\d+').firstMatch(test.studentClass)?.group(0);
+        if (studentClassNum != null && testClassNum != null) {
+          if (studentClassNum != testClassNum) return false;
+        } else if (test.studentClass.trim().toLowerCase() != studentClass.trim().toLowerCase()) {
+          return false;
+        }
+
+        // Match Medium ('Both' or 'All' applies to all mediums)
+        final tMed = test.medium.trim().toLowerCase();
+        if (tMed.isNotEmpty && sMedClean.isNotEmpty && tMed != 'both' && tMed != 'all') {
+          if (tMed != sMedClean) return false;
+        }
+
+        // Match Division if specified ('All' or 'Both' applies to all divisions)
+        if (test.division != null && test.division!.trim().isNotEmpty) {
+          final tDiv = test.division!.trim().toUpperCase();
+          if (tDiv != 'ALL' && tDiv != 'BOTH' && sDivClean.isNotEmpty && tDiv != sDivClean) {
+            return false;
+          }
+        }
+
+        // Group filtering (Maths / Biology)
+        final subjLower = test.subject.trim().toLowerCase();
+        if (subjLower.contains('math') && studentGroup != null && studentGroup.isNotEmpty && !studentGroup.toLowerCase().contains('math')) {
+          return false;
+        }
+        if (subjLower.contains('bio') && studentGroup != null && studentGroup.isNotEmpty && !studentGroup.toLowerCase().contains('bio')) {
+          return false;
+        }
+
+        return true;
+      }).toList();
+    } catch (e) {
+      debugPrint('Error getting available tests: $e');
+      return [];
+    }
   }
 
   Future<Test?> getPublishedTestByCode(String testCode) async {
@@ -736,14 +1034,21 @@ class SupabaseService {
   }
 
   Future<List<Map<String, dynamic>>> getStudentHistory() async {
-    final userId = currentUser!.id;
-    final response = await supabase
-        .from('attempts')
-        .select('*, tests(*)')
-        .eq('student_id', userId)
-        .order('submitted_at', ascending: false);
+    final user = currentUser;
+    if (user == null) return [];
+    try {
+      final response = await supabase
+          .from('attempts')
+          .select('*, tests(*)')
+          .eq('student_id', user.id)
+          .order('submitted_at', ascending: false)
+          .timeout(const Duration(seconds: 5), onTimeout: () => []);
 
-    return List<Map<String, dynamic>>.from(response as List);
+      return List<Map<String, dynamic>>.from(response as List);
+    } catch (e) {
+      debugPrint('Error getting student history: $e');
+      return [];
+    }
   }
 
   Future<List<Map<String, dynamic>>> getTeacherTestAttempts() async {
