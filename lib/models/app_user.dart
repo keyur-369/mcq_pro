@@ -1,28 +1,66 @@
 class AppUser {
   final String id;
-  final String role; // 'teacher' or 'student'
+  final String role; // 'admin', 'teacher', 'student'
   final String email;
+  final String? name;
   final String? studentClass; // '11' or '12'
   final String? division;
   final String? rollNo;
+  final String? studentGroup;
+  final String? medium;
+  final String? institution;
+  final String? academicYear;
+  final bool isActive;
+  final bool mustChangePassword;
+  final String? temporaryPassword;
 
   AppUser({
     required this.id,
     required this.role,
     required this.email,
+    this.name,
     this.studentClass,
     this.division,
     this.rollNo,
+    this.studentGroup,
+    this.medium,
+    this.institution,
+    this.academicYear,
+    this.isActive = true,
+    this.mustChangePassword = false,
+    this.temporaryPassword,
   });
 
+  bool get isAdmin => role == 'admin';
+  bool get isTeacher => role == 'teacher';
+  bool get isStudent => role == 'student';
+
   factory AppUser.fromMap(Map<String, dynamic> map) {
+    bool parseBool(dynamic val, bool defaultVal) {
+      if (val == null) return defaultVal;
+      if (val is bool) return val;
+      if (val is num) return val != 0;
+      final str = val.toString().toLowerCase().trim();
+      if (str == 'true' || str == 't' || str == '1') return true;
+      if (str == 'false' || str == 'f' || str == '0') return false;
+      return defaultVal;
+    }
+
     return AppUser(
-      id: map['id'],
-      role: map['role'],
-      email: map['email'],
-      studentClass: map['class'],
-      division: map['division'],
-      rollNo: map['roll_no'],
+      id: map['id']?.toString() ?? '',
+      role: map['role']?.toString() ?? 'student',
+      email: map['email']?.toString() ?? '',
+      name: map['name']?.toString(),
+      studentClass: map['class']?.toString(),
+      division: map['division']?.toString(),
+      rollNo: map['roll_no']?.toString(),
+      studentGroup: map['student_group']?.toString(),
+      medium: map['medium']?.toString(),
+      institution: map['institution']?.toString(),
+      academicYear: map['academic_year']?.toString(),
+      isActive: parseBool(map['is_active'] ?? map['isActive'], true),
+      mustChangePassword: parseBool(map['must_change_password'] ?? map['mustChangePassword'], false),
+      temporaryPassword: map['temporary_password']?.toString(),
     );
   }
 
@@ -31,9 +69,17 @@ class AppUser {
       'id': id,
       'role': role,
       'email': email,
-      'class': studentClass,
+      'name': name,
+      'class': studentClass != null ? int.tryParse(studentClass!) : null,
       'division': division,
       'roll_no': rollNo,
+      'student_group': studentGroup,
+      'medium': medium,
+      'institution': institution,
+      'academic_year': academicYear,
+      'is_active': isActive,
+      'must_change_password': mustChangePassword,
+      'temporary_password': temporaryPassword,
     };
   }
 }

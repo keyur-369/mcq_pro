@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:mcq_test_app/core/constants/app_colors.dart';
 import 'package:mcq_test_app/core/services/supabase_service.dart';
 import 'package:mcq_test_app/core/widgets/app_gradient_background.dart';
+import 'package:mcq_test_app/features/admin/screens/admin_dashboard.dart';
+import 'package:mcq_test_app/features/auth/screens/change_password_screen.dart';
 import 'package:mcq_test_app/features/auth/screens/login_screen.dart';
 import 'package:mcq_test_app/features/teacher/screens/teacher_dashboard.dart';
 import 'package:mcq_test_app/features/student/screens/student_dashboard.dart';
@@ -32,13 +34,49 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
 
   void _checkAuth() async {
     await Future.delayed(const Duration(seconds: 2));
-    
+
     final user = SupabaseService().currentUser;
-    
+
     if (user != null) {
       final profile = await SupabaseService().getUserProfile(user.id);
       if (mounted) {
-        if (profile != null && profile['role'] == 'teacher') {
+        if (profile == null) {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (_) => const LoginScreen()),
+          );
+          return;
+        }
+
+        if (!profile.isActive) {
+          await SupabaseService().logout();
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Your account has been deactivated. Please contact administrator.'),
+              backgroundColor: AppColors.error,
+            ),
+          );
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (_) => const LoginScreen()),
+          );
+          return;
+        }
+
+        if (profile.mustChangePassword) {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (_) => ChangePasswordScreen(user: profile)),
+          );
+          return;
+        }
+
+        if (profile.isAdmin) {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (_) => const AdminDashboard()),
+          );
+        } else if (profile.isTeacher) {
           Navigator.pushReplacement(
             context,
             MaterialPageRoute(builder: (_) => const TeacherDashboard()),

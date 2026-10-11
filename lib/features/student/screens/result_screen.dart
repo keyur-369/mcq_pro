@@ -1,17 +1,23 @@
 import 'package:flutter/material.dart';
 import 'package:mcq_test_app/core/constants/app_colors.dart';
+import 'package:mcq_test_app/core/services/pdf_export_service.dart';
+import 'package:mcq_test_app/core/services/supabase_service.dart';
 import 'package:mcq_test_app/core/widgets/animated_page.dart';
 import 'package:mcq_test_app/core/widgets/app_card.dart';
 import 'package:mcq_test_app/core/widgets/app_gradient_background.dart';
 import 'package:mcq_test_app/core/widgets/app_section_title.dart';
 import 'package:mcq_test_app/models/question.dart';
+import 'package:mcq_test_app/models/test.dart';
 import 'package:mcq_test_app/features/student/screens/student_dashboard.dart';
 
-class ResultScreen extends StatelessWidget {
+class ResultScreen extends StatefulWidget {
   final int score;
   final int total;
   final List<Question> questions;
   final Map<String, String> selectedAnswers;
+  final Test? test;
+  final String? studentName;
+  final String? rollNumber;
 
   const ResultScreen({
     super.key,
@@ -19,11 +25,85 @@ class ResultScreen extends StatelessWidget {
     required this.total,
     required this.questions,
     required this.selectedAnswers,
+    this.test,
+    this.studentName,
+    this.rollNumber,
   });
 
   @override
+  State<ResultScreen> createState() => _ResultScreenState();
+}
+
+class _ResultScreenState extends State<ResultScreen> {
+  bool _isDownloadingPdf = false;
+
+  void _downloadSolutionsPdf() async {
+    setState(() => _isDownloadingPdf = true);
+    try {
+      final supabase = SupabaseService();
+      final user = supabase.currentUser;
+
+      String name = widget.studentName ?? 'Student';
+      String rollNo = widget.rollNumber ?? 'N/A';
+
+      if (user != null && (widget.studentName == null || widget.rollNumber == null)) {
+        final profile = await supabase.getUserProfile(user.id);
+        if (profile != null) {
+          name = profile.name ?? profile.email;
+          rollNo = profile.rollNo ?? 'N/A';
+        }
+      }
+
+      final fallbackTest = widget.test ?? Test(
+        teacherId: '',
+        studentClass: '11',
+        medium: 'English',
+        subject: 'General Assessment',
+        topic: 'Test Solutions',
+        level: 'Boards',
+        duration: 30,
+        status: TestStatus.published,
+      );
+
+      final filePath = await PdfExportService.generateAndSaveSolutionPdf(
+        test: fallbackTest,
+        questions: widget.questions,
+        selectedAnswers: widget.selectedAnswers,
+        score: widget.score,
+        total: widget.total,
+        studentName: name,
+        rollNumber: rollNo,
+      );
+
+      if (mounted) {
+        if (filePath != null) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('🎉 Solution report saved: $filePath'),
+              backgroundColor: AppColors.success,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Download was cancelled')),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('PDF generation failed: $e'), backgroundColor: AppColors.error),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isDownloadingPdf = false);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final percentage = total == 0 ? 0.0 : (score / total) * 100;
+    final percentage = widget.total == 0 ? 0.0 : (widget.score / widget.total) * 100;
 
     return Scaffold(
       extendBodyBehindAppBar: true,
@@ -38,13 +118,44 @@ class ResultScreen extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
               children: [
                 _buildScoreOverview(context, percentage),
-                const SizedBox(height: 24),
+                const SizedBox(height: 20),
                 _buildAnalysisSummary(),
-                const SizedBox(height: 36),
+                const SizedBox(height: 24),
+
+                // Download Test with Solutions Button
                 SizedBox(
                   width: double.infinity,
                   height: 52,
                   child: ElevatedButton.icon(
+                    onPressed: _isDownloadingPdf ? null : _downloadSolutionsPdf,
+                    icon: _isDownloadingPdf
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5),
+                          )
+                        : const Icon(Icons.picture_as_pdf_rounded, size: 22),
+                    label: Text(
+                      _isDownloadingPdf ? 'Generating PDF...' : 'Download Test with Solutions',
+                      style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      foregroundColor: Colors.white,
+                      elevation: 4,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+
+                // Back to Dashboard Button
+                SizedBox(
+                  width: double.infinity,
+                  height: 50,
+                  child: OutlinedButton.icon(
                     onPressed: () => Navigator.pushAndRemoveUntil(
                       context,
                       MaterialPageRoute(
@@ -60,14 +171,16 @@ class ResultScreen extends StatelessWidget {
                         fontSize: 15,
                       ),
                     ),
-                    style: ElevatedButton.styleFrom(
+                    style: OutlinedButton.styleFrom(
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(16),
                       ),
                     ),
                   ),
                 ),
-                const SizedBox(height: 40),
+                const SizedBox(height: 36),
+
+                // Questions Review Header
                 Row(
                   children: [
                     const AppSectionTitle(title: 'Review Questions'),
@@ -82,7 +195,7 @@ class ResultScreen extends StatelessWidget {
                         borderRadius: BorderRadius.circular(20),
                       ),
                       child: Text(
-                        '${questions.length} Qs',
+                        '${widget.questions.length} Qs',
                         style: const TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.w700,
@@ -93,15 +206,16 @@ class ResultScreen extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 16),
+
                 ListView.separated(
                   shrinkWrap: true,
                   physics: const NeverScrollableScrollPhysics(),
-                  itemCount: questions.length,
+                  itemCount: widget.questions.length,
                   separatorBuilder: (_, __) => const SizedBox(height: 16),
                   itemBuilder: (context, index) {
                     return _buildQuestionReview(
                       context,
-                      questions[index],
+                      widget.questions[index],
                       index + 1,
                     );
                   },
@@ -122,11 +236,11 @@ class ResultScreen extends StatelessWidget {
     final remarkIcon = percentage >= 80
         ? Icons.emoji_events_rounded
         : (percentage >= 50
-              ? Icons.thumb_up_rounded
-              : Icons.trending_up_rounded);
+            ? Icons.thumb_up_rounded
+            : Icons.trending_up_rounded);
 
     return Container(
-      padding: const EdgeInsets.fromLTRB(28, 32, 28, 28),
+      padding: const EdgeInsets.fromLTRB(28, 30, 28, 28),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
           colors: AppColors.primaryGradient,
@@ -142,76 +256,72 @@ class ResultScreen extends StatelessWidget {
           ),
         ],
       ),
-      child: Column(
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
                   children: [
-                    Row(
-                      children: [
-                        Icon(remarkIcon, color: Colors.white, size: 22),
-                        const SizedBox(width: 8),
-                        Flexible(
-                          child: Text(
-                            remark,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 20,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
+                    Icon(remarkIcon, color: Colors.white, size: 22),
+                    const SizedBox(width: 8),
+                    Flexible(
+                      child: Text(
+                        remark,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 20,
+                          fontWeight: FontWeight.w800,
                         ),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-                    Text(
-                      'You correctly answered $score out of $total questions.',
-                      style: TextStyle(
-                        color: Colors.white.withOpacity(0.85),
-                        fontSize: 13,
-                        height: 1.4,
                       ),
                     ),
                   ],
                 ),
-              ),
-              const SizedBox(width: 20),
-              SizedBox(
-                width: 108,
-                height: 108,
-                child: Stack(
-                  alignment: Alignment.center,
-                  children: [
-                    SizedBox(
-                      width: 108,
-                      height: 108,
-                      child: CircularProgressIndicator(
-                        value: total == 0 ? 0 : score / total,
-                        strokeWidth: 9,
-                        strokeCap: StrokeCap.round,
-                        backgroundColor: Colors.white.withOpacity(0.2),
-                        valueColor: const AlwaysStoppedAnimation<Color>(
-                          Colors.white,
-                        ),
-                      ),
-                    ),
-                    Text(
-                      '$score/$total',
-                      style: const TextStyle(
-                        fontSize: 24,
-                        fontWeight: FontWeight.w900,
-                        color: Colors.white,
-                      ),
-                    ),
-                  ],
+                const SizedBox(height: 10),
+                Text(
+                  'You correctly answered ${widget.score} out of ${widget.total} questions.',
+                  style: TextStyle(
+                    color: Colors.white.withOpacity(0.85),
+                    fontSize: 13,
+                    height: 1.4,
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
+          ),
+          const SizedBox(width: 20),
+          SizedBox(
+            width: 100,
+            height: 100,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                SizedBox(
+                  width: 100,
+                  height: 100,
+                  child: CircularProgressIndicator(
+                    value: widget.total == 0 ? 0 : widget.score / widget.total,
+                    strokeWidth: 9,
+                    strokeCap: StrokeCap.round,
+                    backgroundColor: Colors.white.withOpacity(0.2),
+                    valueColor: const AlwaysStoppedAnimation<Color>(
+                      Colors.white,
+                    ),
+                  ),
+                ),
+                Text(
+                  '${widget.score}/${widget.total}',
+                  style: const TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w900,
+                    color: Colors.white,
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -225,7 +335,7 @@ class ResultScreen extends StatelessWidget {
           child: _statTile(
             icon: Icons.check_circle_rounded,
             color: AppColors.success,
-            value: '$score',
+            value: '${widget.score}',
             label: 'Correct',
           ),
         ),
@@ -234,7 +344,7 @@ class ResultScreen extends StatelessWidget {
           child: _statTile(
             icon: Icons.cancel_rounded,
             color: AppColors.error,
-            value: '${total - score}',
+            value: '${widget.total - widget.score}',
             label: 'Wrong',
           ),
         ),
@@ -292,9 +402,9 @@ class ResultScreen extends StatelessWidget {
     Question question,
     int questionNumber,
   ) {
-    final userAnswer = selectedAnswers[question.id];
+    final userAnswer = widget.selectedAnswers[question.id];
     final isCorrect = userAnswer == question.correctAnswer;
-    final isUnanswered = userAnswer == null;
+    final isUnanswered = userAnswer == null || userAnswer.isEmpty;
 
     Color statusColor = isCorrect
         ? AppColors.success
@@ -369,35 +479,15 @@ class ResultScreen extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 18),
-          _buildOptionRow(
-            'A',
-            question.optionA,
-            question.correctAnswer,
-            userAnswer,
-          ),
+          _buildOptionRow('A', question.optionA, question.correctAnswer, userAnswer),
           const SizedBox(height: 8),
-          _buildOptionRow(
-            'B',
-            question.optionB,
-            question.correctAnswer,
-            userAnswer,
-          ),
+          _buildOptionRow('B', question.optionB, question.correctAnswer, userAnswer),
           const SizedBox(height: 8),
-          _buildOptionRow(
-            'C',
-            question.optionC,
-            question.correctAnswer,
-            userAnswer,
-          ),
+          _buildOptionRow('C', question.optionC, question.correctAnswer, userAnswer),
           const SizedBox(height: 8),
-          _buildOptionRow(
-            'D',
-            question.optionD,
-            question.correctAnswer,
-            userAnswer,
-          ),
-          if (!isCorrect && question.explanation.isNotEmpty) ...[
-            const SizedBox(height: 18),
+          _buildOptionRow('D', question.optionD, question.correctAnswer, userAnswer),
+          if (question.explanation.isNotEmpty) ...[
+            const SizedBox(height: 16),
             Container(
               padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(
@@ -410,14 +500,10 @@ class ResultScreen extends StatelessWidget {
                 children: [
                   const Row(
                     children: [
-                      Icon(
-                        Icons.lightbulb_rounded,
-                        color: AppColors.primary,
-                        size: 18,
-                      ),
+                      Icon(Icons.lightbulb_rounded, color: AppColors.primary, size: 18),
                       SizedBox(width: 6),
                       Text(
-                        'Explanation',
+                        'Explanation & Solution',
                         style: TextStyle(
                           color: AppColors.primary,
                           fontWeight: FontWeight.w700,

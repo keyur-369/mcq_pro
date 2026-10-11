@@ -44,40 +44,78 @@ class AppTheme {
         ),
       ),
       textTheme: GoogleFonts.outfitTextTheme(
-        const TextTheme(
-          displayLarge: TextStyle(
-            color: AppColors.textPrimary,
-            fontWeight: FontWeight.w800,
-            letterSpacing: -1,
-          ),
-          headlineLarge: TextStyle(
-            color: AppColors.textPrimary,
-            fontWeight: FontWeight.w800,
-            letterSpacing: -1,
-          ),
-          headlineMedium: TextStyle(
-            color: AppColors.textPrimary,
-            fontWeight: FontWeight.w700,
-            letterSpacing: -0.5,
-          ),
-          titleLarge: TextStyle(
-            color: AppColors.textPrimary,
-            fontWeight: FontWeight.w600,
-          ),
-          bodyLarge: TextStyle(
-            color: AppColors.textPrimary,
-            fontSize: 16,
-            fontWeight: FontWeight.w500,
-          ),
-          bodyMedium: TextStyle(
-            color: AppColors.textSecondary,
-            fontSize: 14,
-            fontWeight: FontWeight.w500,
-          ),
-          labelLarge: TextStyle(
-            color: AppColors.textPrimary,
-            fontWeight: FontWeight.w600,
-          ),
+        ThemeData.light().textTheme.apply(
+          bodyColor: AppColors.textPrimary,
+          displayColor: AppColors.textPrimary,
+        ),
+      ).copyWith(
+        displayLarge: GoogleFonts.outfit(
+          color: AppColors.textPrimary,
+          fontWeight: FontWeight.w800,
+          letterSpacing: -1,
+        ),
+        displayMedium: GoogleFonts.outfit(
+          color: AppColors.textPrimary,
+          fontWeight: FontWeight.w800,
+        ),
+        displaySmall: GoogleFonts.outfit(
+          color: AppColors.textPrimary,
+          fontWeight: FontWeight.w700,
+        ),
+        headlineLarge: GoogleFonts.outfit(
+          color: AppColors.textPrimary,
+          fontWeight: FontWeight.w800,
+          letterSpacing: -1,
+        ),
+        headlineMedium: GoogleFonts.outfit(
+          color: AppColors.textPrimary,
+          fontWeight: FontWeight.w700,
+          letterSpacing: -0.5,
+        ),
+        headlineSmall: GoogleFonts.outfit(
+          color: AppColors.textPrimary,
+          fontWeight: FontWeight.w700,
+        ),
+        titleLarge: GoogleFonts.outfit(
+          color: AppColors.textPrimary,
+          fontWeight: FontWeight.w600,
+        ),
+        titleMedium: GoogleFonts.outfit(
+          color: AppColors.textPrimary,
+          fontWeight: FontWeight.w600,
+          fontSize: 15,
+        ),
+        titleSmall: GoogleFonts.outfit(
+          color: AppColors.textPrimary,
+          fontWeight: FontWeight.w600,
+          fontSize: 13,
+        ),
+        bodyLarge: GoogleFonts.outfit(
+          color: AppColors.textPrimary,
+          fontSize: 16,
+          fontWeight: FontWeight.w500,
+        ),
+        bodyMedium: GoogleFonts.outfit(
+          color: AppColors.textSecondary,
+          fontSize: 14,
+          fontWeight: FontWeight.w500,
+        ),
+        bodySmall: GoogleFonts.outfit(
+          color: AppColors.textMuted,
+          fontSize: 12,
+          fontWeight: FontWeight.w500,
+        ),
+        labelLarge: GoogleFonts.outfit(
+          color: AppColors.textPrimary,
+          fontWeight: FontWeight.w600,
+        ),
+        labelMedium: GoogleFonts.outfit(
+          color: AppColors.textSecondary,
+          fontWeight: FontWeight.w600,
+        ),
+        labelSmall: GoogleFonts.outfit(
+          color: AppColors.textMuted,
+          fontWeight: FontWeight.w500,
         ),
       ),
       inputDecorationTheme: InputDecorationTheme(
@@ -105,6 +143,16 @@ class AppTheme {
         errorBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(18),
           borderSide: const BorderSide(color: AppColors.error, width: 1.5),
+        ),
+      ),
+      dropdownMenuTheme: DropdownMenuThemeData(
+        textStyle: GoogleFonts.outfit(
+          color: AppColors.textPrimary,
+          fontSize: 14,
+          fontWeight: FontWeight.w600,
+        ),
+        menuStyle: const MenuStyle(
+          backgroundColor: WidgetStatePropertyAll(AppColors.surface),
         ),
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(

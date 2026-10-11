@@ -7,6 +7,7 @@ import 'package:mcq_test_app/core/widgets/app_card.dart';
 import 'package:mcq_test_app/core/widgets/app_gradient_background.dart';
 import 'package:mcq_test_app/models/test.dart';
 import 'package:mcq_test_app/features/teacher/screens/question_preview_screen.dart';
+import 'package:mcq_test_app/core/services/pdf_export_service.dart';
 
 class TeacherTestsScreen extends StatelessWidget {
   final String status; // 'draft' or 'published'
@@ -133,9 +134,9 @@ class TeacherTestsScreen extends StatelessWidget {
             ],
           ),
           if (test.testCode != null) ...[
-            const SizedBox(height: 20),
+            const SizedBox(height: 16),
             Container(
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               decoration: BoxDecoration(
                 color: AppColors.background.withOpacity(0.5),
                 borderRadius: BorderRadius.circular(14),
@@ -143,22 +144,68 @@ class TeacherTestsScreen extends StatelessWidget {
               ),
               child: Row(
                 children: [
-                  const Text('Test ID: ', style: TextStyle(color: AppColors.textSecondary, fontWeight: FontWeight.bold)),
-                  Text(test.testCode!, style: const TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w900, fontSize: 16, letterSpacing: 1)),
+                  const Text('Test Code: ', style: TextStyle(color: AppColors.textSecondary, fontWeight: FontWeight.bold, fontSize: 13)),
+                  Text(test.testCode!, style: const TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w900, fontSize: 15, letterSpacing: 1)),
                   const Spacer(),
                   IconButton(
                     onPressed: () {
                       Clipboard.setData(ClipboardData(text: test.testCode!));
                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('ID copied to clipboard')),
+                        const SnackBar(content: Text('Test code copied to clipboard')),
                       );
                     },
-                    icon: const Icon(Icons.copy_rounded, size: 18, color: AppColors.primary),
+                    icon: const Icon(Icons.copy_rounded, size: 16, color: AppColors.primary),
                     padding: EdgeInsets.zero,
                     constraints: const BoxConstraints(),
                   ),
                 ],
               ),
+            ),
+          ],
+          if (status == 'published') ...[
+            const SizedBox(height: 14),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppColors.primary,
+                      side: const BorderSide(color: AppColors.primary),
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    onPressed: () async {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Generating test question paper PDF...')),
+                      );
+                      try {
+                        final questions = await supabase.getTestQuestions(test.id);
+                        final path = await PdfExportService.generateAndSaveTestPaperPdf(
+                          test: test,
+                          questions: questions,
+                          includeAnswerKey: true,
+                        );
+                        if (context.mounted && path != null) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('PDF downloaded: $path'),
+                              backgroundColor: AppColors.success,
+                            ),
+                          );
+                        }
+                      } catch (e) {
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Failed: $e'), backgroundColor: AppColors.error),
+                          );
+                        }
+                      }
+                    },
+                    icon: const Icon(Icons.picture_as_pdf_rounded, size: 18),
+                    label: const Text('Download PDF', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                  ),
+                ),
+              ],
             ),
           ],
         ],

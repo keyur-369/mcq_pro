@@ -5,6 +5,7 @@ import 'package:mcq_test_app/core/services/supabase_service.dart';
 import 'package:mcq_test_app/core/widgets/animated_page.dart';
 import 'package:mcq_test_app/core/widgets/app_gradient_background.dart';
 import 'package:mcq_test_app/features/student/screens/result_screen.dart';
+import 'package:mcq_test_app/models/test.dart';
 
 class HistoryScreen extends StatelessWidget {
   const HistoryScreen({super.key});
@@ -19,90 +20,92 @@ class HistoryScreen extends StatelessWidget {
         child: FutureBuilder<List<Map<String, dynamic>>>(
           future: SupabaseService().getStudentHistory(),
           builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (snapshot.hasError) {
-            return Center(child: Text('Error: ${snapshot.error}'));
-          }
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            if (snapshot.hasError) {
+              return Center(child: Text('Error: ${snapshot.error}'));
+            }
 
-          final attempts = snapshot.data ?? [];
-          if (attempts.isEmpty) {
-            return const Center(
-              child: Text(
-                'No past tests found.',
-                style: TextStyle(fontSize: 16, color: AppColors.textSecondary),
-              ),
-            );
-          }
-
-          return AnimatedPage(
-            child: ListView.builder(
-              padding: const EdgeInsets.all(20),
-              itemCount: attempts.length,
-              itemBuilder: (context, index) {
-              final attempt = attempts[index];
-              final testData = attempt['tests']; // Joined test data
-              
-              // Handle case where test data might be missing (deleted test)
-              if (testData == null) {
-                return const SizedBox.shrink(); 
-              }
-
-              final attemptId = attempt['id'] as String;
-              final testId = testData['id'] as String;
-              final subject = testData['subject'] as String? ?? 'Unknown Subject';
-              final topic = testData['topic'] as String? ?? 'Unknown Topic';
-              final score = attempt['score'] as int? ?? 0;
-              final submittedAtStr = attempt['submitted_at'] as String?;
-              
-              DateTime? submittedAt;
-              if (submittedAtStr != null) {
-                submittedAt = DateTime.tryParse(submittedAtStr);
-              }
-
-              return Card(
-                margin: const EdgeInsets.only(bottom: 16),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                child: ListTile(
-                  contentPadding: const EdgeInsets.all(16),
-                  title: Text('$subject: $topic', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                  subtitle: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const SizedBox(height: 8),
-                      Text(
-                        'Score: $score',
-                        style: const TextStyle(color: AppColors.purple, fontWeight: FontWeight.bold),
-                      ),
-                      const SizedBox(height: 4),
-                      if (submittedAt != null)
-                        Text(
-                          'Date: ${DateFormat.yMMMd().add_jm().format(submittedAt.toLocal())}',
-                          style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
-                        ),
-                    ],
-                  ),
-                  trailing: ElevatedButton(
-                    onPressed: () => _openResultPreview(context, attemptId, testId, score),
-                    style: ElevatedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                      minimumSize: const Size(0, 36),
-                    ),
-                    child: const Text('Review'),
-                  ),
+            final attempts = snapshot.data ?? [];
+            if (attempts.isEmpty) {
+              return const Center(
+                child: Text(
+                  'No past tests found.',
+                  style: TextStyle(fontSize: 16, color: AppColors.textSecondary),
                 ),
               );
-            },
-            ),
-          );
-        },
+            }
+
+            return AnimatedPage(
+              child: ListView.builder(
+                padding: const EdgeInsets.all(20),
+                itemCount: attempts.length,
+                itemBuilder: (context, index) {
+                  final attempt = attempts[index];
+                  final testData = attempt['tests']; // Joined test data
+
+                  // Handle case where test data might be missing (deleted test)
+                  if (testData == null) {
+                    return const SizedBox.shrink();
+                  }
+
+                  final attemptId = attempt['id'] as String;
+                  final testId = testData['id'] as String;
+                  final subject = testData['subject'] as String? ?? 'Unknown Subject';
+                  final topic = testData['topic'] as String? ?? 'Unknown Topic';
+                  final score = attempt['score'] as int? ?? 0;
+                  final submittedAtStr = attempt['submitted_at'] as String?;
+
+                  DateTime? submittedAt;
+                  if (submittedAtStr != null) {
+                    submittedAt = DateTime.tryParse(submittedAtStr);
+                  }
+
+                  final testModel = testData is Map<String, dynamic> ? Test.fromMap(testData) : null;
+
+                  return Card(
+                    margin: const EdgeInsets.only(bottom: 16),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    child: ListTile(
+                      contentPadding: const EdgeInsets.all(16),
+                      title: Text('$subject: $topic', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                      subtitle: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const SizedBox(height: 8),
+                          Text(
+                            'Score: $score',
+                            style: const TextStyle(color: AppColors.purple, fontWeight: FontWeight.bold),
+                          ),
+                          const SizedBox(height: 4),
+                          if (submittedAt != null)
+                            Text(
+                              'Date: ${DateFormat.yMMMd().add_jm().format(submittedAt.toLocal())}',
+                              style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                            ),
+                        ],
+                      ),
+                      trailing: ElevatedButton(
+                        onPressed: () => _openResultPreview(context, attemptId, testId, score, test: testModel),
+                        style: ElevatedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                          minimumSize: const Size(0, 36),
+                        ),
+                        child: const Text('Review'),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            );
+          },
         ),
       ),
     );
   }
 
-  void _openResultPreview(BuildContext context, String attemptId, String testId, int score) async {
+  void _openResultPreview(BuildContext context, String attemptId, String testId, int score, {Test? test}) async {
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -124,6 +127,7 @@ class HistoryScreen extends StatelessWidget {
               total: questions.length,
               questions: questions,
               selectedAnswers: selectedAnswers,
+              test: test,
             ),
           ),
         );

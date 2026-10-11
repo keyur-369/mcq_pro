@@ -5,6 +5,7 @@ class AppColors {
   static const Color background = Color(0xFFF8FAFC); // Slate 50
   static const Color surface = Color(0xFFFFFFFF);    // White
   static const Color card = Color(0xFFFFFFFF);       // White
+  static const Color cardBackground = Color(0xFFFFFFFF); // White
   static const Color cardLight = Color(0xFFF1F5F9);  // Slate 100
 
   // Accent Colors - Vibrant Indigo/Violet

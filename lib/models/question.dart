@@ -21,6 +21,8 @@ class Question {
     required this.explanation,
   });
 
+  List<String> get options => [optionA, optionB, optionC, optionD];
+
   factory Question.fromMap(Map<String, dynamic> map) {
     return Question(
       id: map['id'],

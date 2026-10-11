@@ -11,6 +11,7 @@ import 'package:mcq_test_app/core/widgets/app_gradient_background.dart';
 import 'package:mcq_test_app/models/test.dart';
 import 'package:mcq_test_app/models/question.dart';
 import 'package:mcq_test_app/features/teacher/screens/question_preview_screen.dart';
+import 'package:mcq_test_app/models/teacher_assignment.dart';
 import 'package:flutter_spinkit/flutter_spinkit.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:mcq_test_app/core/providers/api_key_provider.dart';
@@ -28,12 +29,18 @@ class _CreateTestScreenState extends ConsumerState<CreateTestScreen>
     with TickerProviderStateMixin {
   int _currentStep = 0;
   String? selectedClass = '11';
+  String? selectedDivision;
   String? selectedMedium = 'English';
   String? selectedLevel = 'Boards / GUJCET';
   String? selectedSubject = 'Physics';
   String selectedModel = 'gemini-2.5-flash';
   GenerationMode genMode = GenerationMode.topic;
   PlatformFile? selectedPdf;
+
+  List<String> _allowedStandards = ['11', '12'];
+  List<String> _allowedMediums = ['English', 'Gujarati'];
+  List<String> _allowedSubjects = ['Physics', 'Chemistry', 'Biology', 'Math'];
+  List<String> _allowedDivisions = ['A', 'B', 'C'];
 
   final _topicController = TextEditingController();
   final _topicHintController = TextEditingController();
@@ -61,14 +68,52 @@ class _CreateTestScreenState extends ConsumerState<CreateTestScreen>
     _pulseAnimation = Tween<double>(begin: 0.85, end: 1.0).animate(
       CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
     );
+
+    _loadTeacherScope();
+  }
+
+  void _loadTeacherScope() async {
+    final user = SupabaseService().currentUser;
+    if (user != null) {
+      final List<TeacherAssignment> list = await SupabaseService().getTeacherAssignments(user.id);
+      if (list.isNotEmpty && mounted) {
+        setState(() {
+          _allowedStandards = list.map((a) => a.standard).toSet().toList();
+          _allowedMediums = list.map((a) => a.medium).toSet().toList();
+          _allowedSubjects = list.map((a) => a.subject).toSet().toList();
+          _allowedDivisions = list.map((a) => a.division).toSet().toList();
+
+          if (!_allowedStandards.contains(selectedClass) && _allowedStandards.isNotEmpty) {
+            selectedClass = _allowedStandards.first;
+          }
+          if (!_allowedMediums.contains(selectedMedium) && _allowedMediums.isNotEmpty) {
+            selectedMedium = _allowedMediums.first;
+          }
+          if (!_allowedSubjects.contains(selectedSubject) && _allowedSubjects.isNotEmpty) {
+            selectedSubject = _allowedSubjects.first;
+          }
+          if (_allowedDivisions.isNotEmpty) {
+            selectedDivision = _allowedDivisions.first;
+          }
+        });
+      }
+    }
   }
 
   // ── Helpers ──────────────────────────────────────────────────────────────
 
   List<String> _getAvailableSubjects(String? level) {
-    if (level == 'NEET') return ['Physics', 'Chemistry', 'Biology'];
-    if (level == 'JEE') return ['Physics', 'Chemistry', 'Math'];
-    return ['Physics', 'Chemistry', 'Biology', 'Math'];
+    List<String> base;
+    if (level == 'NEET') {
+      base = ['Physics', 'Chemistry', 'Biology'];
+    } else if (level == 'JEE') {
+      base = ['Physics', 'Chemistry', 'Math'];
+    } else {
+      base = ['Physics', 'Chemistry', 'Biology', 'Math'];
+    }
+
+    final filtered = base.where((s) => _allowedSubjects.contains(s)).toList();
+    return filtered.isNotEmpty ? filtered : base;
   }
 
   void _onLevelChanged(String val) {
@@ -127,6 +172,7 @@ class _CreateTestScreenState extends ConsumerState<CreateTestScreen>
         teacherId: SupabaseService().currentUser?.id ?? '',
         testCode: _generateUniqueCode(),
         studentClass: selectedClass ?? '11',
+        division: selectedDivision,
         medium: selectedMedium?.toLowerCase() ?? 'english',
         subject: selectedSubject ?? 'Physics',
         topic: genMode == GenerationMode.pdf
@@ -479,10 +525,15 @@ class _CreateTestScreenState extends ConsumerState<CreateTestScreen>
         AppCard(
           child: Column(
             children: [
-              _buildChoiceGroup('Standard', ['11', '12'], selectedClass,
+              _buildChoiceGroup('Standard', _allowedStandards, selectedClass,
                       (val) => setState(() => selectedClass = val)),
+              if (_allowedDivisions.isNotEmpty) ...[
+                const Divider(height: 32),
+                _buildChoiceGroup('Division', ['All', ..._allowedDivisions], selectedDivision ?? 'All',
+                        (val) => setState(() => selectedDivision = val == 'All' ? null : val)),
+              ],
               const Divider(height: 32),
-              _buildChoiceGroup('Medium', ['English', 'Gujarati'], selectedMedium,
+              _buildChoiceGroup('Medium', _allowedMediums, selectedMedium,
                       (val) => setState(() => selectedMedium = val)),
             ],
           ),

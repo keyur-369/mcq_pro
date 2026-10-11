@@ -11,13 +11,50 @@ import 'package:mcq_test_app/features/teacher/screens/teacher_tests_screen.dart'
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:mcq_test_app/core/providers/api_key_provider.dart';
 import 'package:mcq_test_app/models/api_key.dart';
-import 'package:mcq_test_app/core/services/ai_generator_service.dart';
+import 'package:mcq_test_app/models/teacher_assignment.dart';
+import 'package:mcq_test_app/models/test_backup.dart';
 
-class TeacherDashboard extends ConsumerWidget {
+class TeacherDashboard extends ConsumerStatefulWidget {
   const TeacherDashboard({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<TeacherDashboard> createState() => _TeacherDashboardState();
+}
+
+class _TeacherDashboardState extends ConsumerState<TeacherDashboard> {
+  List<TeacherAssignment> _assignments = [];
+  List<TestBackup> _backups = [];
+  bool _isLoadingScope = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadTeacherData();
+  }
+
+  Future<void> _loadTeacherData() async {
+    final user = SupabaseService().currentUser;
+    if (user != null) {
+      try {
+        final assignments = await SupabaseService().getTeacherAssignments(user.id);
+        final backups = await SupabaseService().getTestBackups();
+        if (mounted) {
+          setState(() {
+            _assignments = assignments;
+            _backups = backups;
+            _isLoadingScope = false;
+          });
+        }
+      } catch (_) {
+        if (mounted) setState(() => _isLoadingScope = false);
+      }
+    } else {
+      if (mounted) setState(() => _isLoadingScope = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final apiKeysAsync = ref.watch(apiKeysProvider);
     final selectedKey = ref.watch(selectedApiKeyProvider);
 
@@ -48,7 +85,6 @@ class TeacherDashboard extends ConsumerWidget {
             },
             icon: const Icon(Icons.logout_rounded),
           ),
-
           const SizedBox(width: 8),
         ],
       ),
@@ -59,7 +95,9 @@ class TeacherDashboard extends ConsumerWidget {
               padding: const EdgeInsets.fromLTRB(24, 20, 24, 24),
               children: [
                 _buildWelcomeBanner(),
-                const SizedBox(height: 30),
+                const SizedBox(height: 20),
+                _buildTeachingScopeCard(),
+                const SizedBox(height: 24),
                 _buildSectionHeader(
                   title: 'AI Configuration',
                   subtitle: selectedKey == null
@@ -69,7 +107,7 @@ class TeacherDashboard extends ConsumerWidget {
                 const SizedBox(height: 16),
 
                 _buildApiKeySelector(context, ref, apiKeysAsync, selectedKey),
-                const SizedBox(height: 20),
+                const SizedBox(height: 24),
                 _buildSectionHeader(
                   title: 'Quick Actions',
                   subtitle: 'Create, manage and analyze tests',
@@ -96,7 +134,7 @@ class TeacherDashboard extends ConsumerWidget {
                         MaterialPageRoute(
                           builder: (_) => const CreateTestScreen(),
                         ),
-                      ),
+                      ).then((_) => _loadTeacherData()),
                     ),
                     _buildDashboardCard(
                       context,
@@ -142,13 +180,259 @@ class TeacherDashboard extends ConsumerWidget {
                   ],
                 ),
 
+                const SizedBox(height: 16),
+                _buildDriveBackupCard(context),
                 const SizedBox(height: 30),
-
               ],
             ),
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildTeachingScopeCard() {
+    if (_isLoadingScope) {
+      return const SizedBox(height: 60, child: Center(child: CircularProgressIndicator(strokeWidth: 2)));
+    }
+
+    if (_assignments.isEmpty) {
+      return AppCard(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          children: [
+            const Icon(Icons.info_outline_rounded, color: AppColors.secondary),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                'No teaching assignments yet. Contact Main Admin to assign standards and subjects.',
+                style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final standards = _assignments.map((a) => 'Std ${a.standard}').toSet().join(', ');
+    final divisions = _assignments.map((a) => a.division).toSet().join(', ');
+    final mediums = _assignments.map((a) => a.medium).toSet().join(', ');
+    final subjects = _assignments.map((a) => a.subject).toSet().join(', ');
+
+    return AppCard(
+      padding: const EdgeInsets.all(18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: AppColors.primarySoft,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(Icons.assignment_ind_rounded, color: AppColors.primary, size: 20),
+              ),
+              const SizedBox(width: 10),
+              const Expanded(
+                child: Text(
+                  'My Teaching Permissions',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: AppColors.textPrimary),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: AppColors.success.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Text('Authorized', style: TextStyle(color: AppColors.success, fontSize: 11, fontWeight: FontWeight.bold)),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _buildScopeChip(Icons.school_rounded, standards),
+              _buildScopeChip(Icons.meeting_room_rounded, 'Div: $divisions'),
+              _buildScopeChip(Icons.translate_rounded, mediums),
+              _buildScopeChip(Icons.menu_book_rounded, subjects),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildScopeChip(IconData icon, String text) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: AppColors.cardBackground.withOpacity(0.8),
+        border: Border.all(color: AppColors.border),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: AppColors.primary),
+          const SizedBox(width: 6),
+          Text(text, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDriveBackupCard(BuildContext context) {
+    final failedCount = _backups.where((b) => b.status == 'failed').length;
+    final completedCount = _backups.where((b) => b.status == 'completed').length;
+
+    return AppCard(
+      padding: const EdgeInsets.all(18),
+      onTap: () => _showBackupStatusModal(context),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: failedCount > 0 ? AppColors.error.withOpacity(0.12) : AppColors.success.withOpacity(0.12),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Icon(
+              Icons.cloud_sync_rounded,
+              color: failedCount > 0 ? AppColors.error : AppColors.success,
+              size: 24,
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Google Drive Backup Status',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: AppColors.textPrimary),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  failedCount > 0
+                      ? '$failedCount failed backup(s) • Tap to review and retry'
+                      : '$completedCount tests safely archived in Google Drive',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                    color: failedCount > 0 ? AppColors.error : AppColors.textSecondary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const Icon(Icons.arrow_forward_ios_rounded, size: 14, color: AppColors.textMuted),
+        ],
+      ),
+    );
+  }
+
+  void _showBackupStatusModal(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.cardBackground,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setModalState) {
+            return Padding(
+              padding: const EdgeInsets.fromLTRB(24, 20, 24, 24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.add_to_drive_rounded, color: AppColors.primary),
+                      const SizedBox(width: 10),
+                      const Text(
+                        'Drive Backup Archive',
+                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+                      ),
+                      const Spacer(),
+                      IconButton(
+                        onPressed: () => Navigator.pop(ctx),
+                        icon: const Icon(Icons.close_rounded),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'All published tests and answer keys are archived in Google Drive under 7-day retention rules.',
+                    style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                  ),
+                  const SizedBox(height: 16),
+                  if (_backups.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 24),
+                      child: Center(child: Text('No backup records found yet', style: TextStyle(color: AppColors.textMuted))),
+                    )
+                  else
+                    Flexible(
+                      child: ListView.separated(
+                        shrinkWrap: true,
+                        itemCount: _backups.length,
+                        separatorBuilder: (_, __) => const Divider(height: 1, color: AppColors.border),
+                        itemBuilder: (ctx, i) {
+                          final b = _backups[i];
+                          final isFailed = b.status == 'failed';
+                          final isCompleted = b.status == 'completed';
+
+                          return ListTile(
+                            contentPadding: EdgeInsets.zero,
+                            leading: Icon(
+                              isCompleted ? Icons.check_circle_rounded : (isFailed ? Icons.error_rounded : Icons.hourglass_top_rounded),
+                              color: isCompleted ? AppColors.success : (isFailed ? AppColors.error : AppColors.secondary),
+                            ),
+                            title: Text(
+                              b.driveFileName ?? 'Test Backup #${b.testId.substring(0, 6)}',
+                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppColors.textPrimary),
+                            ),
+                            subtitle: Text(
+                              'Status: ${b.status.toUpperCase()} ${b.errorMessage != null ? "• ${b.errorMessage}" : ""}',
+                              style: TextStyle(fontSize: 11, color: isFailed ? AppColors.error : AppColors.textSecondary),
+                            ),
+                            trailing: isFailed
+                                ? TextButton.icon(
+                                    onPressed: () async {
+                                      final success = await SupabaseService().retryBackup(b.id, 'test');
+                                      if (ctx.mounted) {
+                                        ScaffoldMessenger.of(ctx).showSnackBar(
+                                          SnackBar(
+                                            content: Text(success ? 'Retry initiated' : 'Retry failed. Please contact Admin.'),
+                                            backgroundColor: success ? AppColors.success : AppColors.error,
+                                          ),
+                                        );
+                                        await _loadTeacherData();
+                                        setModalState(() {});
+                                      }
+                                    },
+                                    icon: const Icon(Icons.refresh_rounded, size: 14),
+                                    label: const Text('Retry', style: TextStyle(fontSize: 12)),
+                                  )
+                                : null,
+                          );
+                        },
+                      ),
+                    ),
+                ],
+              ),
+            );
+          },
+        );
+      },
     );
   }
 

@@ -195,6 +195,7 @@ class _TestTakingScreenState extends State<TestTakingScreen>
               total: _questions.length,
               questions: _questions,
               selectedAnswers: _selectedAnswers,
+              test: widget.test,
             ),
           ),
         );
