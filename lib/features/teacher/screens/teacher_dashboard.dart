@@ -8,6 +8,8 @@ import 'package:mcq_test_app/core/widgets/app_gradient_background.dart';
 import 'package:mcq_test_app/features/auth/screens/login_screen.dart';
 import 'package:mcq_test_app/features/teacher/screens/create_test_screen.dart';
 import 'package:mcq_test_app/features/teacher/screens/teacher_results_screen.dart';
+import 'package:mcq_test_app/features/teacher/screens/teacher_profile_screen.dart';
+import 'package:mcq_test_app/features/teacher/screens/teacher_students_screen.dart';
 import 'package:mcq_test_app/features/teacher/screens/teacher_tests_screen.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:mcq_test_app/core/providers/api_key_provider.dart';
@@ -74,10 +76,7 @@ class GlassCard extends StatelessWidget {
                     gradient: LinearGradient(
                       begin: Alignment.topLeft,
                       end: Alignment.bottomRight,
-                      colors: [
-                        base.withOpacity(0.42),
-                        base.withOpacity(0.14),
-                      ],
+                      colors: [base.withOpacity(0.42), base.withOpacity(0.14)],
                     ),
                     border: Border.all(
                       color: Colors.white.withOpacity(0.55),
@@ -146,7 +145,8 @@ class _TeacherDashboardState extends ConsumerState<TeacherDashboard> {
       _teacherName = widget.user!.name!.trim();
     } else {
       final curUser = SupabaseService().currentUser;
-      _teacherName = curUser?.userMetadata?['name']?.toString() ??
+      _teacherName =
+          curUser?.userMetadata?['name']?.toString() ??
           curUser?.email?.split('@').first ??
           'Teacher';
     }
@@ -158,8 +158,9 @@ class _TeacherDashboardState extends ConsumerState<TeacherDashboard> {
     if (user != null) {
       try {
         final profile = await SupabaseService().getUserProfile(user.id);
-        final assignments =
-        await SupabaseService().getTeacherAssignments(user.id);
+        final assignments = await SupabaseService().getTeacherAssignments(
+          user.id,
+        );
         final backups = await SupabaseService().getTestBackups();
         if (mounted) {
           setState(() {
@@ -184,7 +185,7 @@ class _TeacherDashboardState extends ConsumerState<TeacherDashboard> {
     if (mounted) {
       Navigator.of(context).pushAndRemoveUntil(
         MaterialPageRoute(builder: (_) => const LoginScreen()),
-            (route) => false,
+        (route) => false,
       );
     }
   }
@@ -210,6 +211,25 @@ class _TeacherDashboardState extends ConsumerState<TeacherDashboard> {
         ),
         centerTitle: false,
         actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: GlassCard(
+              radius: 16,
+              blur: 16,
+              padding: const EdgeInsets.all(10),
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => TeacherProfileScreen(initialUser: widget.user),
+                ),
+              ).then((_) => _loadTeacherData()),
+              child: const Icon(
+                Icons.person_rounded,
+                size: 20,
+                color: AppColors.primary,
+              ),
+            ),
+          ),
           Padding(
             padding: const EdgeInsets.only(right: 16),
             child: GlassCard(
@@ -243,8 +263,7 @@ class _TeacherDashboardState extends ConsumerState<TeacherDashboard> {
                       : 'Active key: ${selectedKey.name}',
                 ),
                 const SizedBox(height: 14),
-                _buildApiKeySelector(
-                    context, ref, apiKeysAsync, selectedKey),
+                _buildApiKeySelector(context, ref, apiKeysAsync, selectedKey),
                 const SizedBox(height: 26),
                 _buildSectionHeader(
                   title: 'Quick Actions',
@@ -275,18 +294,17 @@ class _TeacherDashboardState extends ConsumerState<TeacherDashboard> {
                     ),
                     _buildDashboardCard(
                       context,
-                      title: 'Drafts',
-                      subtitle: 'In Progress',
-                      icon: Icons.edit_document,
+                      title: 'My Students',
+                      subtitle: 'Directory & Roster',
+                      icon: Icons.people_alt_rounded,
                       gradient: [
-                        AppColors.secondary,
-                        const Color(0xFFF472B6)
+                        const Color(0xFF6366F1),
+                        const Color(0xFF8B5CF6),
                       ],
                       onTap: () => Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (_) =>
-                          const TeacherTestsScreen(status: 'draft'),
+                          builder: (_) => const TeacherStudentsScreen(),
                         ),
                       ),
                     ),
@@ -295,15 +313,26 @@ class _TeacherDashboardState extends ConsumerState<TeacherDashboard> {
                       title: 'Published',
                       subtitle: 'Live Tests',
                       icon: Icons.rocket_launch_rounded,
-                      gradient: [
-                        AppColors.success,
-                        const Color(0xFF34D399)
-                      ],
+                      gradient: [AppColors.success, const Color(0xFF34D399)],
                       onTap: () => Navigator.push(
                         context,
                         MaterialPageRoute(
                           builder: (_) =>
-                          const TeacherTestsScreen(status: 'published'),
+                              const TeacherTestsScreen(status: 'published'),
+                        ),
+                      ),
+                    ),
+                    _buildDashboardCard(
+                      context,
+                      title: 'Drafts',
+                      subtitle: 'In Progress',
+                      icon: Icons.edit_document,
+                      gradient: [AppColors.secondary, const Color(0xFFF472B6)],
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) =>
+                              const TeacherTestsScreen(status: 'draft'),
                         ),
                       ),
                     ),
@@ -312,16 +341,24 @@ class _TeacherDashboardState extends ConsumerState<TeacherDashboard> {
                       title: 'Analytics',
                       subtitle: 'Student Performance',
                       icon: Icons.analytics_rounded,
-                      gradient: [
-                        AppColors.accent,
-                        const Color(0xFF67E8F9)
-                      ],
+                      gradient: [AppColors.accent, const Color(0xFF67E8F9)],
                       onTap: () => Navigator.push(
                         context,
                         MaterialPageRoute(
                           builder: (_) => const TeacherResultsScreen(),
                         ),
                       ),
+                    ),
+                    _buildDashboardCard(
+                      context,
+                      title: 'Drive Backup',
+                      subtitle: 'Cloud Archive',
+                      icon: Icons.cloud_sync_rounded,
+                      gradient: [
+                        const Color(0xFFF59E0B),
+                        const Color(0xFFFBBF24),
+                      ],
+                      onTap: () => _showBackupStatusModal(context),
                     ),
                   ],
                 ),
@@ -365,8 +402,10 @@ class _TeacherDashboardState extends ConsumerState<TeacherDashboard> {
       );
     }
 
-    final standards =
-    _assignments.map((a) => 'Std ${a.standard}').toSet().join(', ');
+    final standards = _assignments
+        .map((a) => 'Std ${a.standard}')
+        .toSet()
+        .join(', ');
     final divisions = _assignments.map((a) => a.division).toSet().join(', ');
     final mediums = _assignments.map((a) => a.medium).toSet().join(', ');
     final subjects = _assignments.map((a) => a.subject).toSet().join(', ');
@@ -385,8 +424,11 @@ class _TeacherDashboardState extends ConsumerState<TeacherDashboard> {
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(color: Colors.white.withOpacity(0.6)),
                 ),
-                child: const Icon(Icons.assignment_ind_rounded,
-                    color: AppColors.primary, size: 20),
+                child: const Icon(
+                  Icons.assignment_ind_rounded,
+                  color: AppColors.primary,
+                  size: 20,
+                ),
               ),
               const SizedBox(width: 10),
               const Expanded(
@@ -403,13 +445,16 @@ class _TeacherDashboardState extends ConsumerState<TeacherDashboard> {
               ),
               const SizedBox(width: 8),
               Container(
-                padding:
-                const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 5,
+                ),
                 decoration: BoxDecoration(
                   color: AppColors.success.withOpacity(0.16),
                   borderRadius: BorderRadius.circular(20),
                   border: Border.all(
-                      color: AppColors.success.withOpacity(0.35)),
+                    color: AppColors.success.withOpacity(0.35),
+                  ),
                 ),
                 child: const Text(
                   'Authorized',
@@ -432,6 +477,40 @@ class _TeacherDashboardState extends ConsumerState<TeacherDashboard> {
               _buildScopeChip(Icons.translate_rounded, mediums),
               _buildScopeChip(Icons.menu_book_rounded, subjects),
             ],
+          ),
+          const SizedBox(height: 14),
+          InkWell(
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => const TeacherStudentsScreen(),
+              ),
+            ),
+            borderRadius: BorderRadius.circular(14),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.48),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: Colors.white.withOpacity(0.75)),
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.people_alt_rounded, size: 18, color: AppColors.primary),
+                  SizedBox(width: 8),
+                  Text(
+                    'View Enrolled Students',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.primary,
+                    ),
+                  ),
+                  Spacer(),
+                  Icon(Icons.arrow_forward_ios_rounded, size: 12, color: AppColors.primary),
+                ],
+              ),
+            ),
           ),
         ],
       ),
@@ -457,20 +536,27 @@ class _TeacherDashboardState extends ConsumerState<TeacherDashboard> {
             border: Border.all(color: Colors.white.withOpacity(0.7)),
             borderRadius: BorderRadius.circular(14),
           ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, size: 14, color: AppColors.primary),
-              const SizedBox(width: 6),
-              Text(
-                text,
-                style: const TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.textPrimary,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 260),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon, size: 14, color: AppColors.primary),
+                const SizedBox(width: 6),
+                Flexible(
+                  child: Text(
+                    text,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -482,8 +568,9 @@ class _TeacherDashboardState extends ConsumerState<TeacherDashboard> {
   // ---------------------------------------------------------------------------
   Widget _buildDriveBackupCard(BuildContext context) {
     final failedCount = _backups.where((b) => b.status == 'failed').length;
-    final completedCount =
-        _backups.where((b) => b.status == 'completed').length;
+    final completedCount = _backups
+        .where((b) => b.status == 'completed')
+        .length;
     final statusColor = failedCount > 0 ? AppColors.error : AppColors.success;
 
     return GlassCard(
@@ -530,8 +617,11 @@ class _TeacherDashboardState extends ConsumerState<TeacherDashboard> {
               ],
             ),
           ),
-          const Icon(Icons.arrow_forward_ios_rounded,
-              size: 14, color: AppColors.textMuted),
+          const Icon(
+            Icons.arrow_forward_ios_rounded,
+            size: 14,
+            color: AppColors.textMuted,
+          ),
         ],
       ),
     );
@@ -560,7 +650,9 @@ class _TeacherDashboardState extends ConsumerState<TeacherDashboard> {
                 ),
                 border: Border(
                   top: BorderSide(
-                      color: Colors.white.withOpacity(0.8), width: 1.2),
+                    color: Colors.white.withOpacity(0.8),
+                    width: 1.2,
+                  ),
                 ),
               ),
               child: StatefulBuilder(
@@ -584,8 +676,10 @@ class _TeacherDashboardState extends ConsumerState<TeacherDashboard> {
                         const SizedBox(height: 14),
                         Row(
                           children: [
-                            const Icon(Icons.add_to_drive_rounded,
-                                color: AppColors.primary),
+                            const Icon(
+                              Icons.add_to_drive_rounded,
+                              color: AppColors.primary,
+                            ),
                             const SizedBox(width: 10),
                             const Text(
                               'Drive Backup Archive',
@@ -606,7 +700,9 @@ class _TeacherDashboardState extends ConsumerState<TeacherDashboard> {
                         const Text(
                           'All published tests and answer keys are archived in Google Drive under 7-day retention rules.',
                           style: TextStyle(
-                              fontSize: 12, color: AppColors.textSecondary),
+                            fontSize: 12,
+                            color: AppColors.textSecondary,
+                          ),
                         ),
                         const SizedBox(height: 16),
                         if (_backups.isEmpty)
@@ -639,13 +735,13 @@ class _TeacherDashboardState extends ConsumerState<TeacherDashboard> {
                                     isCompleted
                                         ? Icons.check_circle_rounded
                                         : (isFailed
-                                        ? Icons.error_rounded
-                                        : Icons.hourglass_top_rounded),
+                                              ? Icons.error_rounded
+                                              : Icons.hourglass_top_rounded),
                                     color: isCompleted
                                         ? AppColors.success
                                         : (isFailed
-                                        ? AppColors.error
-                                        : AppColors.secondary),
+                                              ? AppColors.error
+                                              : AppColors.secondary),
                                   ),
                                   title: Text(
                                     b.driveFileName ??
@@ -667,32 +763,38 @@ class _TeacherDashboardState extends ConsumerState<TeacherDashboard> {
                                   ),
                                   trailing: isFailed
                                       ? TextButton.icon(
-                                    onPressed: () async {
-                                      final success =
-                                      await SupabaseService()
-                                          .retryBackup(b.id, 'test');
-                                      if (ctx.mounted) {
-                                        ScaffoldMessenger.of(ctx)
-                                            .showSnackBar(
-                                          SnackBar(
-                                            content: Text(success
-                                                ? 'Retry initiated'
-                                                : 'Retry failed. Please contact Admin.'),
-                                            backgroundColor: success
-                                                ? AppColors.success
-                                                : AppColors.error,
+                                          onPressed: () async {
+                                            final success =
+                                                await SupabaseService()
+                                                    .retryBackup(b.id, 'test');
+                                            if (ctx.mounted) {
+                                              ScaffoldMessenger.of(
+                                                ctx,
+                                              ).showSnackBar(
+                                                SnackBar(
+                                                  content: Text(
+                                                    success
+                                                        ? 'Retry initiated'
+                                                        : 'Retry failed. Please contact Admin.',
+                                                  ),
+                                                  backgroundColor: success
+                                                      ? AppColors.success
+                                                      : AppColors.error,
+                                                ),
+                                              );
+                                              await _loadTeacherData();
+                                              setModalState(() {});
+                                            }
+                                          },
+                                          icon: const Icon(
+                                            Icons.refresh_rounded,
+                                            size: 14,
                                           ),
-                                        );
-                                        await _loadTeacherData();
-                                        setModalState(() {});
-                                      }
-                                    },
-                                    icon: const Icon(
-                                        Icons.refresh_rounded,
-                                        size: 14),
-                                    label: const Text('Retry',
-                                        style: TextStyle(fontSize: 12)),
-                                  )
+                                          label: const Text(
+                                            'Retry',
+                                            style: TextStyle(fontSize: 12),
+                                          ),
+                                        )
                                       : null,
                                 );
                               },
@@ -840,29 +942,83 @@ class _TeacherDashboardState extends ConsumerState<TeacherDashboard> {
                     ),
                   ),
                   const SizedBox(height: 18),
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(30),
-                    child: BackdropFilter(
-                      filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 14, vertical: 8),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.20),
-                          borderRadius: BorderRadius.circular(30),
-                          border: Border.all(
-                              color: Colors.white.withOpacity(0.45)),
-                        ),
-                        child: const Text(
-                          'Ready to evaluate?',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
+                  Wrap(
+                    spacing: 10,
+                    runSpacing: 8,
+                    children: [
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(30),
+                        child: BackdropFilter(
+                          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 14,
+                              vertical: 8,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(0.20),
+                              borderRadius: BorderRadius.circular(30),
+                              border: Border.all(
+                                color: Colors.white.withOpacity(0.45),
+                              ),
+                            ),
+                            child: const Text(
+                              'Ready to evaluate?',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
                           ),
                         ),
                       ),
-                    ),
+                      InkWell(
+                        onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) =>
+                                TeacherProfileScreen(initialUser: widget.user),
+                          ),
+                        ).then((_) => _loadTeacherData()),
+                        borderRadius: BorderRadius.circular(30),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(30),
+                          child: BackdropFilter(
+                            filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 14,
+                                vertical: 8,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withOpacity(0.30),
+                                borderRadius: BorderRadius.circular(30),
+                                border: Border.all(
+                                  color: Colors.white.withOpacity(0.60),
+                                ),
+                              ),
+                              child: const Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.person_outline_rounded,
+                                      size: 14, color: Colors.white),
+                                  SizedBox(width: 5),
+                                  Text(
+                                    'Faculty Profile',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -930,13 +1086,13 @@ class _TeacherDashboardState extends ConsumerState<TeacherDashboard> {
   // Quick action tile
   // ---------------------------------------------------------------------------
   Widget _buildDashboardCard(
-      BuildContext context, {
-        required String title,
-        required String subtitle,
-        required IconData icon,
-        required List<Color> gradient,
-        required VoidCallback onTap,
-      }) {
+    BuildContext context, {
+    required String title,
+    required String subtitle,
+    required IconData icon,
+    required List<Color> gradient,
+    required VoidCallback onTap,
+  }) {
     return GlassCard(
       onTap: onTap,
       tint: gradient.first,
@@ -977,6 +1133,8 @@ class _TeacherDashboardState extends ConsumerState<TeacherDashboard> {
           const Spacer(),
           Text(
             title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: const TextStyle(
               fontWeight: FontWeight.w900,
               fontSize: 18,
@@ -986,6 +1144,8 @@ class _TeacherDashboardState extends ConsumerState<TeacherDashboard> {
           const SizedBox(height: 6),
           Text(
             subtitle,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: const TextStyle(
               color: AppColors.textSecondary,
               fontSize: 12,
@@ -1001,11 +1161,11 @@ class _TeacherDashboardState extends ConsumerState<TeacherDashboard> {
   // AI key selector
   // ---------------------------------------------------------------------------
   Widget _buildApiKeySelector(
-      BuildContext context,
-      WidgetRef ref,
-      AsyncValue<List<ApiKey>> apiKeysAsync,
-      ApiKey? selectedKey,
-      ) {
+    BuildContext context,
+    WidgetRef ref,
+    AsyncValue<List<ApiKey>> apiKeysAsync,
+    ApiKey? selectedKey,
+  ) {
     return apiKeysAsync.when(
       data: (keys) {
         if (selectedKey == null && keys.isNotEmpty) {
@@ -1035,62 +1195,62 @@ class _TeacherDashboardState extends ConsumerState<TeacherDashboard> {
               Expanded(
                 child: keys.isEmpty
                     ? const Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'AI Provider',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: AppColors.textSecondary,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    SizedBox(height: 4),
-                    Text(
-                      'No keys added',
-                      style: TextStyle(
-                        color: AppColors.textMuted,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ],
-                )
-                    : DropdownButtonHideUnderline(
-                  child: DropdownButton<ApiKey>(
-                    value: (selectedKey != null &&
-                        keys.contains(selectedKey))
-                        ? selectedKey
-                        : keys.first,
-                    isExpanded: true,
-                    itemHeight: null,
-                    borderRadius: BorderRadius.circular(20),
-                    dropdownColor: Colors.white.withOpacity(0.95),
-                    icon: const Icon(Icons.keyboard_arrow_down_rounded),
-                    items: keys.map((key) {
-                      return DropdownMenuItem<ApiKey>(
-                        value: key,
-                        child: Text(
-                          key.name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w800,
-                            color: AppColors.textPrimary,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'AI Provider',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: AppColors.textSecondary,
+                              fontWeight: FontWeight.w600,
+                            ),
                           ),
+                          SizedBox(height: 4),
+                          Text(
+                            'No keys added',
+                            style: TextStyle(
+                              color: AppColors.textMuted,
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
+                      )
+                    : DropdownButtonHideUnderline(
+                        child: DropdownButton<ApiKey>(
+                          value:
+                              (selectedKey != null &&
+                                  keys.contains(selectedKey))
+                              ? selectedKey
+                              : keys.first,
+                          isExpanded: true,
+                          itemHeight: null,
+                          borderRadius: BorderRadius.circular(20),
+                          dropdownColor: Colors.white.withOpacity(0.95),
+                          icon: const Icon(Icons.keyboard_arrow_down_rounded),
+                          items: keys.map((key) {
+                            return DropdownMenuItem<ApiKey>(
+                              value: key,
+                              child: Text(
+                                key.name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w800,
+                                  color: AppColors.textPrimary,
+                                ),
+                              ),
+                            );
+                          }).toList(),
+                          onChanged: (val) {
+                            if (val != null) {
+                              ref.read(selectedApiKeyProvider.notifier).state =
+                                  val;
+                            }
+                          },
                         ),
-                      );
-                    }).toList(),
-                    onChanged: (val) {
-                      if (val != null) {
-                        ref
-                            .read(selectedApiKeyProvider.notifier)
-                            .state = val;
-                      }
-                    },
-                  ),
-                ),
+                      ),
               ),
               const SizedBox(width: 8),
               Container(

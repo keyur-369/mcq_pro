@@ -315,20 +315,24 @@ class _AdminTeachersTabState extends State<AdminTeachersTab>
           const SizedBox(height: 10),
 
           // Filter Chips Row
-          Row(
-            children: [
-              _buildFilterChip('all', 'All (${widget.teachers.length})'),
-              const SizedBox(width: 8),
-              _buildFilterChip(
-                'active',
-                'Active (${widget.teachers.where((t) => t.isActive).length})',
-              ),
-              const SizedBox(width: 8),
-              _buildFilterChip(
-                'disabled',
-                'Disabled (${widget.teachers.where((t) => !t.isActive).length})',
-              ),
-            ],
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            physics: const BouncingScrollPhysics(),
+            child: Row(
+              children: [
+                _buildFilterChip('all', 'All (${widget.teachers.length})'),
+                const SizedBox(width: 8),
+                _buildFilterChip(
+                  'active',
+                  'Active (${widget.teachers.where((t) => t.isActive).length})',
+                ),
+                const SizedBox(width: 8),
+                _buildFilterChip(
+                  'disabled',
+                  'Disabled (${widget.teachers.where((t) => !t.isActive).length})',
+                ),
+              ],
+            ),
           ),
           const SizedBox(height: 16),
 

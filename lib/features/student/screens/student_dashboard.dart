@@ -424,12 +424,16 @@ class _StudentDashboardState extends State<StudentDashboard> {
                       child: CircularProgressIndicator(strokeWidth: 2.2),
                     ),
                     const SizedBox(width: 14),
-                    Text(
-                      'Checking for tests in Std $studentClass-$studentDiv ($studentMedium)...',
-                      style: const TextStyle(
-                        color: AppColors.textSecondary,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w500,
+                    Flexible(
+                      child: Text(
+                        'Checking for tests in Std $studentClass-$studentDiv ($studentMedium)...',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: AppColors.textSecondary,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500,
+                        ),
                       ),
                     ),
                   ],
@@ -621,11 +625,15 @@ class _StudentDashboardState extends State<StudentDashboard> {
             children: [
               Text(
                 'Hey, $cleanName 👋',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
                 style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: AppColors.textPrimary),
               ),
               const SizedBox(height: 3),
               Text(
                 '$cleanInst • Std $cleanClass-$cleanDiv ($cleanMedium)',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
                 style: const TextStyle(color: AppColors.textSecondary, fontWeight: FontWeight.w500, fontSize: 12),
               ),
             ],
@@ -757,7 +765,12 @@ class _StudentDashboardState extends State<StudentDashboard> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('$subject: $topic', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                Text(
+                  '$subject: $topic',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                ),
                 const SizedBox(height: 3),
                 Text('Score: $score pts', style: const TextStyle(color: AppColors.textSecondary, fontSize: 12)),
               ],

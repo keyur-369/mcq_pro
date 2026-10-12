@@ -1062,6 +1062,24 @@ class SupabaseService {
     return List<Map<String, dynamic>>.from(response as List);
   }
 
+  Future<List<Map<String, dynamic>>> getTeacherTestAttemptsForStudent(String studentId) async {
+    final teacherId = currentUser?.id;
+    if (teacherId == null) return [];
+    try {
+      final response = await supabase
+          .from('attempts')
+          .select('*, tests!inner(*), users!student_id(email, name, class, division, roll_no, student_group)')
+          .eq('tests.teacher_id', teacherId)
+          .eq('student_id', studentId)
+          .order('submitted_at', ascending: false);
+
+      return List<Map<String, dynamic>>.from(response as List);
+    } catch (e) {
+      debugPrint('Error getting student attempts for teacher: $e');
+      return [];
+    }
+  }
+
   Future<Map<String, String>> getAttemptAnswers(String attemptId) async {
     final response = await supabase
         .from('answers')
