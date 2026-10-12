@@ -93,7 +93,9 @@ class _AdminCreateTeacherScreenState extends State<AdminCreateTeacherScreen> {
               children: const [
                 Icon(Icons.check_circle_rounded, color: AppColors.success, size: 28),
                 SizedBox(width: 10),
-                Text('Teacher Created!', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                Expanded(
+                  child: Text('Teacher Created!', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                ),
               ],
             ),
             content: Column(

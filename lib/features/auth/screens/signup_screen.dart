@@ -108,7 +108,12 @@ class _SignupScreenState extends State<SignupScreen> {
               children: [
                 Icon(Icons.mark_email_read_rounded, color: AppColors.primary, size: 28),
                 SizedBox(width: 10),
-                Text('Verification Sent!'),
+                Expanded(
+                  child: Text(
+                    'Verification Sent!',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                ),
               ],
             ),
             content: Column(
@@ -160,7 +165,12 @@ class _SignupScreenState extends State<SignupScreen> {
               children: [
                 Icon(Icons.check_circle_rounded, color: AppColors.success, size: 28),
                 SizedBox(width: 10),
-                Text('Enrollment Complete!'),
+                Expanded(
+                  child: Text(
+                    'Enrollment Complete!',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                ),
               ],
             ),
             content: Column(
@@ -182,9 +192,11 @@ class _SignupScreenState extends State<SignupScreen> {
                     children: [
                       const Icon(Icons.badge_rounded, color: AppColors.primary),
                       const SizedBox(width: 10),
-                      Text(
-                        'Assigned Roll Number: $allocatedRollNo',
-                        style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.primary),
+                      Expanded(
+                        child: Text(
+                          'Assigned Roll Number: $allocatedRollNo',
+                          style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.primary),
+                        ),
                       ),
                     ],
                   ),

@@ -1,18 +1,18 @@
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:mcq_test_app/core/constants/app_colors.dart';
+import 'package:mcq_test_app/core/providers/api_key_provider.dart';
 import 'package:mcq_test_app/core/services/supabase_service.dart';
 import 'package:mcq_test_app/core/widgets/animated_page.dart';
 import 'package:mcq_test_app/core/widgets/app_gradient_background.dart';
 import 'package:mcq_test_app/features/auth/screens/login_screen.dart';
 import 'package:mcq_test_app/features/teacher/screens/create_test_screen.dart';
-import 'package:mcq_test_app/features/teacher/screens/teacher_results_screen.dart';
 import 'package:mcq_test_app/features/teacher/screens/teacher_profile_screen.dart';
+import 'package:mcq_test_app/features/teacher/screens/teacher_results_screen.dart';
 import 'package:mcq_test_app/features/teacher/screens/teacher_students_screen.dart';
 import 'package:mcq_test_app/features/teacher/screens/teacher_tests_screen.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:mcq_test_app/core/providers/api_key_provider.dart';
 import 'package:mcq_test_app/models/api_key.dart';
 import 'package:mcq_test_app/models/app_user.dart';
 import 'package:mcq_test_app/models/teacher_assignment.dart';
@@ -20,8 +20,12 @@ import 'package:mcq_test_app/models/test_backup.dart';
 
 /// ---------------------------------------------------------------------------
 /// Liquid glass primitive
-/// Blur + translucent gradient fill + bright rim + top specular highlight
-/// + soft tinted shadow. Reused by every card on this screen.
+/// Layers (bottom -> top):
+///  1. soft tinted drop shadow
+///  2. rim light (gradient border: bright top-left, faint bottom-right)
+///  3. backdrop blur + translucent gradient fill
+///  4. soft inner glow in the bottom-right corner
+///  5. specular sheen along the top edge
 /// ---------------------------------------------------------------------------
 class GlassCard extends StatelessWidget {
   final Widget child;
@@ -34,9 +38,9 @@ class GlassCard extends StatelessWidget {
   const GlassCard({
     super.key,
     required this.child,
-    this.padding = const EdgeInsets.all(18),
-    this.radius = 28,
-    this.blur = 22,
+    this.padding = const EdgeInsets.all(12),
+    this.radius = 18,
+    this.blur = 20,
     this.tint,
     this.onTap,
   });
@@ -44,79 +48,113 @@ class GlassCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final br = BorderRadius.circular(radius);
+    final innerBr = BorderRadius.circular(radius - 1.2);
     final base = tint ?? Colors.white;
+    final glow = tint ?? AppColors.primary;
 
     return Container(
       decoration: BoxDecoration(
         borderRadius: br,
         boxShadow: [
           BoxShadow(
-            color: (tint ?? AppColors.primary).withOpacity(0.14),
-            blurRadius: 30,
-            offset: const Offset(0, 14),
+            color: glow.withOpacity(0.12),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
           ),
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 3),
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
           ),
         ],
       ),
-      child: ClipRRect(
-        borderRadius: br,
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
-          child: Stack(
-            children: [
-              // Glass body
-              Positioned.fill(
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    borderRadius: br,
-                    gradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [base.withOpacity(0.42), base.withOpacity(0.14)],
-                    ),
-                    border: Border.all(
-                      color: Colors.white.withOpacity(0.55),
-                      width: 1.2,
-                    ),
-                  ),
-                ),
-              ),
-              // Specular highlight (top edge light refraction)
-              Positioned(
-                left: 0,
-                right: 0,
-                top: 0,
-                height: 70,
-                child: IgnorePointer(
+      child: Container(
+        padding: const EdgeInsets.all(1.2),
+        decoration: BoxDecoration(
+          borderRadius: br,
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              Colors.white.withOpacity(0.95),
+              Colors.white.withOpacity(0.25),
+              Colors.white.withOpacity(0.10),
+              Colors.white.withOpacity(0.55),
+            ],
+            stops: const [0.0, 0.35, 0.65, 1.0],
+          ),
+        ),
+        child: ClipRRect(
+          borderRadius: innerBr,
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
+            child: Stack(
+              children: [
+                Positioned.fill(
                   child: DecoratedBox(
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
                         colors: [
-                          Colors.white.withOpacity(0.30),
-                          Colors.white.withOpacity(0.0),
+                          base.withOpacity(0.50),
+                          base.withOpacity(0.16),
                         ],
                       ),
                     ),
                   ),
                 ),
-              ),
-              Material(
-                type: MaterialType.transparency,
-                child: InkWell(
-                  onTap: onTap,
-                  borderRadius: br,
-                  splashColor: Colors.white.withOpacity(0.25),
-                  highlightColor: Colors.white.withOpacity(0.10),
-                  child: Padding(padding: padding, child: child),
+                Positioned(
+                  right: -30,
+                  bottom: -30,
+                  child: IgnorePointer(
+                    child: Container(
+                      width: 90,
+                      height: 90,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        gradient: RadialGradient(
+                          colors: [
+                            glow.withOpacity(0.15),
+                            glow.withOpacity(0.0),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
                 ),
-              ),
-            ],
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  top: 0,
+                  height: 44,
+                  child: IgnorePointer(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            Colors.white.withOpacity(0.30),
+                            Colors.white.withOpacity(0.0),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                Material(
+                  type: MaterialType.transparency,
+                  child: InkWell(
+                    onTap: onTap,
+                    borderRadius: innerBr,
+                    splashColor: Colors.white.withOpacity(0.25),
+                    highlightColor: Colors.white.withOpacity(0.10),
+                    child: Padding(padding: padding, child: child),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -190,182 +228,178 @@ class _TeacherDashboardState extends ConsumerState<TeacherDashboard> {
     }
   }
 
+  // ---------------------------------------------------------------------------
+  // Navigation helpers
+  // ---------------------------------------------------------------------------
+  void _openProfile() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => TeacherProfileScreen(initialUser: widget.user),
+      ),
+    ).then((_) => _loadTeacherData());
+  }
+
+  void _openCreateTest() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const CreateTestScreen()),
+    ).then((_) => _loadTeacherData());
+  }
+
+  void _openStudents() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const TeacherStudentsScreen()),
+    );
+  }
+
+  void _openTests(String status) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => TeacherTestsScreen(status: status)),
+    );
+  }
+
+  void _openResults() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const TeacherResultsScreen()),
+    );
+  }
+
+  String get _greeting {
+    final h = DateTime.now().hour;
+    if (h < 12) return 'Good morning';
+    if (h < 17) return 'Good afternoon';
+    return 'Good evening';
+  }
+
+  String get _initials {
+    final parts = _teacherName
+        .trim()
+        .split(RegExp(r'\s+'))
+        .where((p) => p.isNotEmpty)
+        .toList();
+    if (parts.isEmpty) return 'T';
+    if (parts.length == 1) return parts.first[0].toUpperCase();
+    return (parts.first[0] + parts.last[0]).toUpperCase();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Build
+  // ---------------------------------------------------------------------------
   @override
   Widget build(BuildContext context) {
     final apiKeysAsync = ref.watch(apiKeysProvider);
     final selectedKey = ref.watch(selectedApiKeyProvider);
 
     return Scaffold(
-      extendBodyBehindAppBar: true,
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        scrolledUnderElevation: 0,
-        title: const Text(
-          'MCQ Pro',
-          style: TextStyle(
-            fontSize: 22,
-            fontWeight: FontWeight.w800,
-            color: AppColors.textPrimary,
-          ),
-        ),
-        centerTitle: false,
-        actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: GlassCard(
-              radius: 16,
-              blur: 16,
-              padding: const EdgeInsets.all(10),
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => TeacherProfileScreen(initialUser: widget.user),
-                ),
-              ).then((_) => _loadTeacherData()),
-              child: const Icon(
-                Icons.person_rounded,
-                size: 20,
-                color: AppColors.primary,
-              ),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.only(right: 16),
-            child: GlassCard(
-              radius: 16,
-              blur: 16,
-              padding: const EdgeInsets.all(10),
-              onTap: _logout,
-              child: const Icon(
-                Icons.logout_rounded,
-                size: 20,
-                color: AppColors.textPrimary,
-              ),
-            ),
-          ),
-        ],
-      ),
       body: AppGradientBackground(
-        child: SafeArea(
-          child: AnimatedPage(
-            child: ListView(
-              padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
-              children: [
-                _buildWelcomeBanner(),
-                const SizedBox(height: 18),
-                _buildTeachingScopeCard(),
-                const SizedBox(height: 26),
-                _buildSectionHeader(
-                  title: 'AI Configuration',
-                  subtitle: selectedKey == null
-                      ? 'No active AI key selected'
-                      : 'Active key: ${selectedKey.name}',
-                ),
-                const SizedBox(height: 14),
-                _buildApiKeySelector(context, ref, apiKeysAsync, selectedKey),
-                const SizedBox(height: 26),
-                _buildSectionHeader(
-                  title: 'Quick Actions',
-                  subtitle: 'Create, manage and analyze tests',
-                ),
-                const SizedBox(height: 16),
-                GridView.count(
-                  padding: EdgeInsets.zero,
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  crossAxisCount: 2,
-                  crossAxisSpacing: 14,
-                  mainAxisSpacing: 14,
-                  childAspectRatio: 0.9,
-                  children: [
-                    _buildDashboardCard(
-                      context,
-                      title: 'Create Test',
-                      subtitle: 'AI Powered',
-                      icon: Icons.add_circle_rounded,
-                      gradient: [AppColors.primary, AppColors.primaryLight],
-                      onTap: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const CreateTestScreen(),
-                        ),
-                      ).then((_) => _loadTeacherData()),
-                    ),
-                    _buildDashboardCard(
-                      context,
-                      title: 'My Students',
-                      subtitle: 'Directory & Roster',
-                      icon: Icons.people_alt_rounded,
-                      gradient: [
-                        const Color(0xFF6366F1),
-                        const Color(0xFF8B5CF6),
-                      ],
-                      onTap: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const TeacherStudentsScreen(),
-                        ),
-                      ),
-                    ),
-                    _buildDashboardCard(
-                      context,
-                      title: 'Published',
-                      subtitle: 'Live Tests',
-                      icon: Icons.rocket_launch_rounded,
-                      gradient: [AppColors.success, const Color(0xFF34D399)],
-                      onTap: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) =>
-                              const TeacherTestsScreen(status: 'published'),
+        child: Stack(
+          children: [
+            // Ambient colour blobs so the glass has something to refract.
+            _ambientBlob(
+              top: -60,
+              left: -70,
+              size: 260,
+              color: AppColors.primary,
+              opacity: 0.35,
+            ),
+            _ambientBlob(
+              top: 300,
+              right: -90,
+              size: 260,
+              color: AppColors.secondary,
+              opacity: 0.28,
+            ),
+            _ambientBlob(
+              bottom: 40,
+              left: -80,
+              size: 240,
+              color: AppColors.accent,
+              opacity: 0.28,
+            ),
+            SafeArea(
+              child: Column(
+                children: [
+                  _buildHeader(),
+                  Expanded(
+                    child: AnimatedPage(
+                      child: RefreshIndicator(
+                        onRefresh: _loadTeacherData,
+                        color: AppColors.primary,
+                        child: ListView(
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          padding: const EdgeInsets.fromLTRB(16, 4, 16, 20),
+                          children: [
+                            _buildWelcomeBanner(),
+                            const SizedBox(height: 12),
+                            _buildStatsRow(),
+                            const SizedBox(height: 18),
+                            _buildSectionHeader(
+                              title: 'AI Configuration',
+                              subtitle: selectedKey == null
+                                  ? 'No active AI key selected'
+                                  : 'Active key: ${selectedKey.name}',
+                            ),
+                            const SizedBox(height: 10),
+                            _buildApiKeySelector(
+                              context,
+                              ref,
+                              apiKeysAsync,
+                              selectedKey,
+                            ),
+                            const SizedBox(height: 18),
+                            _buildSectionHeader(
+                              title: 'Quick Actions',
+                              subtitle: 'Create, manage and analyze tests',
+                            ),
+                            const SizedBox(height: 12),
+                            _buildQuickActions(),
+                            const SizedBox(height: 18),
+                            _buildSectionHeader(
+                              title: 'Cloud Backup',
+                              subtitle: 'Google Drive archive of your tests',
+                            ),
+                            const SizedBox(height: 10),
+                            _buildDriveBackupCard(context),
+                          ],
                         ),
                       ),
                     ),
-                    _buildDashboardCard(
-                      context,
-                      title: 'Drafts',
-                      subtitle: 'In Progress',
-                      icon: Icons.edit_document,
-                      gradient: [AppColors.secondary, const Color(0xFFF472B6)],
-                      onTap: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) =>
-                              const TeacherTestsScreen(status: 'draft'),
-                        ),
-                      ),
-                    ),
-                    _buildDashboardCard(
-                      context,
-                      title: 'Analytics',
-                      subtitle: 'Student Performance',
-                      icon: Icons.analytics_rounded,
-                      gradient: [AppColors.accent, const Color(0xFF67E8F9)],
-                      onTap: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const TeacherResultsScreen(),
-                        ),
-                      ),
-                    ),
-                    _buildDashboardCard(
-                      context,
-                      title: 'Drive Backup',
-                      subtitle: 'Cloud Archive',
-                      icon: Icons.cloud_sync_rounded,
-                      gradient: [
-                        const Color(0xFFF59E0B),
-                        const Color(0xFFFBBF24),
-                      ],
-                      onTap: () => _showBackupStatusModal(context),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 18),
-                _buildDriveBackupCard(context),
-                const SizedBox(height: 30),
-              ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _ambientBlob({
+    double? top,
+    double? bottom,
+    double? left,
+    double? right,
+    required double size,
+    required Color color,
+    required double opacity,
+  }) {
+    return Positioned(
+      top: top,
+      bottom: bottom,
+      left: left,
+      right: right,
+      child: IgnorePointer(
+        child: Container(
+          width: size,
+          height: size,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            gradient: RadialGradient(
+              colors: [color.withOpacity(opacity), color.withOpacity(0.0)],
             ),
           ),
         ),
@@ -374,191 +408,641 @@ class _TeacherDashboardState extends ConsumerState<TeacherDashboard> {
   }
 
   // ---------------------------------------------------------------------------
-  // Teaching scope
+  // Header
   // ---------------------------------------------------------------------------
-  Widget _buildTeachingScopeCard() {
-    if (_isLoadingScope) {
-      return const SizedBox(
-        height: 60,
-        child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
-      );
-    }
-
-    if (_assignments.isEmpty) {
-      return GlassCard(
-        padding: const EdgeInsets.all(16),
+  Widget _buildHeader() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 6, 16, 8),
+      child: GlassCard(
+        radius: 20,
+        blur: 20,
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
         child: Row(
           children: [
-            const Icon(Icons.info_outline_rounded, color: AppColors.secondary),
-            const SizedBox(width: 12),
+            // Avatar -> opens faculty profile
+            GestureDetector(
+              onTap: _openProfile,
+              child: Container(
+                width: 38,
+                height: 38,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: const LinearGradient(
+                    colors: AppColors.primaryGradient,
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  border: Border.all(color: Colors.white.withOpacity(0.8)),
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppColors.primary.withOpacity(0.35),
+                      blurRadius: 10,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: Text(
+                  _initials,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 14,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 10),
             Expanded(
-              child: Text(
-                'No teaching assignments yet. Contact Main Admin to assign standards and subjects.',
-                style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text(
+                    'MCQ Pro',
+                    style: TextStyle(
+                      fontSize: 16.5,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: -0.3,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 1),
+                  const Text(
+                    'Teacher Console',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            _headerIconButton(
+              icon: Icons.person_rounded,
+              tooltip: 'Faculty Profile',
+              color: AppColors.primary,
+              onTap: _openProfile,
+            ),
+            const SizedBox(width: 6),
+            _headerIconButton(
+              icon: Icons.logout_rounded,
+              tooltip: 'Logout',
+              color: AppColors.textPrimary,
+              onTap: _logout,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _headerIconButton({
+    required IconData icon,
+    required String tooltip,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return Tooltip(
+      message: tooltip,
+      child: GlassCard(
+        radius: 12,
+        blur: 12,
+        padding: const EdgeInsets.all(7),
+        onTap: onTap,
+        child: Icon(icon, size: 18, color: color),
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Welcome banner
+  // ---------------------------------------------------------------------------
+  Widget _buildWelcomeBanner() {
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: AppColors.primaryGradient,
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.primary.withOpacity(0.32),
+            blurRadius: 20,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(20),
+        child: Stack(
+          children: [
+            Positioned(right: -24, top: -24, child: _glassOrb(110, 0.28, 0.04)),
+            Positioned(
+              right: 32,
+              bottom: -20,
+              child: _glassOrb(70, 0.20, 0.02),
+            ),
+            Positioned(
+              left: -18,
+              bottom: -28,
+              child: _glassOrb(80, 0.14, 0.02),
+            ),
+            Positioned(
+              right: 16,
+              top: 14,
+              child: Icon(
+                Icons.auto_awesome_rounded,
+                color: Colors.white.withOpacity(0.45),
+                size: 36,
+              ),
+            ),
+            Positioned(
+              left: 0,
+              right: 0,
+              top: 0,
+              height: 50,
+              child: IgnorePointer(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Colors.white.withOpacity(0.22),
+                        Colors.white.withOpacity(0.0),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '$_greeting,',
+                    style: const TextStyle(
+                      color: Colors.white70,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Padding(
+                    padding: const EdgeInsets.only(right: 50),
+                    child: Text(
+                      _teacherName,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 21,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: -0.4,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  const Text(
+                    'Create and manage AI-powered MCQ tests',
+                    style: TextStyle(
+                      color: Colors.white70,
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 6,
+                    children: [
+                      _bannerPill(
+                        icon: Icons.person_outline_rounded,
+                        label: 'Faculty Profile',
+                        onTap: _openProfile,
+                      ),
+                    ],
+                  ),
+                ],
               ),
             ),
           ],
         ),
-      );
-    }
+      ),
+    );
+  }
 
-    final standards = _assignments
-        .map((a) => 'Std ${a.standard}')
+  Widget _bannerPill({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+    bool strong = false,
+  }) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(20),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+        child: Material(
+          color: Colors.white.withOpacity(strong ? 0.30 : 0.20),
+          child: InkWell(
+            onTap: onTap,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(
+                  color: Colors.white.withOpacity(strong ? 0.65 : 0.45),
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(icon, size: 14, color: Colors.white),
+                  const SizedBox(width: 5),
+                  Text(
+                    label,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _glassOrb(double size, double a, double b) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Colors.white.withOpacity(a), Colors.white.withOpacity(b)],
+        ),
+        border: Border.all(color: Colors.white.withOpacity(0.32)),
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Stats row
+  // ---------------------------------------------------------------------------
+  Widget _buildStatsRow() {
+    final subjects = _assignments.map((a) => a.subject).toSet().length;
+    final classes = _assignments
+        .map((a) => '${a.standard}-${a.division}')
         .toSet()
-        .join(', ');
-    final divisions = _assignments.map((a) => a.division).toSet().join(', ');
-    final mediums = _assignments.map((a) => a.medium).toSet().join(', ');
-    final subjects = _assignments.map((a) => a.subject).toSet().join(', ');
+        .length;
+    final archived = _backups.where((b) => b.status == 'completed').length;
 
+    return Row(
+      children: [
+        Expanded(
+          child: _statTile(
+            Icons.menu_book_rounded,
+            _isLoadingScope ? '–' : '$subjects',
+            'Subjects',
+            AppColors.primary,
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: _statTile(
+            Icons.groups_rounded,
+            _isLoadingScope ? '–' : '$classes',
+            'Classes',
+            AppColors.secondary,
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: _statTile(
+            Icons.cloud_done_rounded,
+            _isLoadingScope ? '–' : '$archived',
+            'Archived',
+            AppColors.success,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _statTile(IconData icon, String value, String label, Color color) {
     return GlassCard(
-      padding: const EdgeInsets.all(18),
+      radius: 16,
+      blur: 16,
+      tint: color,
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 16, color: color),
+          const SizedBox(height: 6),
+          Text(
+            value,
+            style: const TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w800,
+              color: AppColors.textPrimary,
+              height: 1,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontSize: 10.5,
+              fontWeight: FontWeight.w600,
+              color: AppColors.textSecondary,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _iconBadge(IconData icon, Color color) {
+    return Container(
+      padding: const EdgeInsets.all(7),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.55),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.white.withOpacity(0.75)),
+      ),
+      child: Icon(icon, color: color, size: 16),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Section header
+  // ---------------------------------------------------------------------------
+  Widget _buildSectionHeader({
+    required String title,
+    required String subtitle,
+  }) {
+    return Row(
+      children: [
+        Container(
+          width: 4,
+          height: 18,
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [AppColors.primary, AppColors.primaryLight],
+            ),
+            borderRadius: BorderRadius.circular(8),
+            boxShadow: [
+              BoxShadow(
+                color: AppColors.primary.withOpacity(0.30),
+                blurRadius: 6,
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 15.5,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: -0.2,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 1),
+              Text(
+                subtitle,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w500,
+                  color: AppColors.textSecondary,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Quick actions: one wide hero tile + 2x2 grid
+  // ---------------------------------------------------------------------------
+  Widget _buildQuickActions() {
+    return Column(
+      children: [
+        _buildWideActionCard(
+          title: 'Create Test',
+          subtitle: 'Generate MCQs with AI in minutes',
+          icon: Icons.add_circle_rounded,
+          gradient: [AppColors.primary, AppColors.primaryLight],
+          onTap: _openCreateTest,
+        ),
+        const SizedBox(height: 10),
+        GridView.count(
+          padding: EdgeInsets.zero,
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          crossAxisCount: 2,
+          crossAxisSpacing: 10,
+          mainAxisSpacing: 10,
+          childAspectRatio: 1.30,
+          children: [
+            _buildDashboardCard(
+              title: 'My Students',
+              subtitle: 'Directory & Roster',
+              icon: Icons.people_alt_rounded,
+              gradient: const [Color(0xFF6366F1), Color(0xFF8B5CF6)],
+              onTap: _openStudents,
+            ),
+            _buildDashboardCard(
+              title: 'Published',
+              subtitle: 'Live Tests',
+              icon: Icons.rocket_launch_rounded,
+              gradient: [AppColors.success, const Color(0xFF34D399)],
+              onTap: () => _openTests('published'),
+            ),
+            _buildDashboardCard(
+              title: 'Drafts',
+              subtitle: 'In Progress',
+              icon: Icons.edit_document,
+              gradient: [AppColors.secondary, const Color(0xFFF472B6)],
+              onTap: () => _openTests('draft'),
+            ),
+            _buildDashboardCard(
+              title: 'Analytics',
+              subtitle: 'Student Performance',
+              icon: Icons.analytics_rounded,
+              gradient: [AppColors.accent, const Color(0xFF67E8F9)],
+              onTap: _openResults,
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _gradientIcon(IconData icon, List<Color> gradient, double pad) {
+    return Container(
+      padding: EdgeInsets.all(pad),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: gradient,
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white.withOpacity(0.55)),
+        boxShadow: [
+          BoxShadow(
+            color: gradient.first.withOpacity(0.35),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Icon(icon, color: Colors.white, size: pad > 8 ? 18 : 16),
+    );
+  }
+
+  Widget _arrowChip() {
+    return Container(
+      padding: const EdgeInsets.all(4.5),
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: Colors.white.withOpacity(0.45),
+        border: Border.all(color: Colors.white.withOpacity(0.7)),
+      ),
+      child: const Icon(
+        Icons.arrow_outward_rounded,
+        size: 11,
+        color: AppColors.textPrimary,
+      ),
+    );
+  }
+
+  Widget _buildWideActionCard({
+    required String title,
+    required String subtitle,
+    required IconData icon,
+    required List<Color> gradient,
+    required VoidCallback onTap,
+  }) {
+    return GlassCard(
+      onTap: onTap,
+      tint: gradient.first,
+      radius: 16,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+      child: Row(
+        children: [
+          _gradientIcon(icon, gradient, 9),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 15,
+                    letterSpacing: -0.2,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  subtitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          _arrowChip(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDashboardCard({
+    required String title,
+    required String subtitle,
+    required IconData icon,
+    required List<Color> gradient,
+    required VoidCallback onTap,
+  }) {
+    return GlassCard(
+      onTap: onTap,
+      tint: gradient.first,
+      radius: 16,
+      padding: const EdgeInsets.all(11),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.45),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.white.withOpacity(0.6)),
-                ),
-                child: const Icon(
-                  Icons.assignment_ind_rounded,
-                  color: AppColors.primary,
-                  size: 20,
-                ),
-              ),
-              const SizedBox(width: 10),
-              const Expanded(
-                child: Text(
-                  'My Teaching Permissions',
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 15,
-                    color: AppColors.textPrimary,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 5,
-                ),
-                decoration: BoxDecoration(
-                  color: AppColors.success.withOpacity(0.16),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
-                    color: AppColors.success.withOpacity(0.35),
-                  ),
-                ),
-                child: const Text(
-                  'Authorized',
-                  style: TextStyle(
-                    color: AppColors.success,
-                    fontSize: 11,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
+              _gradientIcon(icon, gradient, 7),
+              const Spacer(),
+              _arrowChip(),
             ],
           ),
-          const SizedBox(height: 14),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              _buildScopeChip(Icons.school_rounded, standards),
-              _buildScopeChip(Icons.meeting_room_rounded, 'Div: $divisions'),
-              _buildScopeChip(Icons.translate_rounded, mediums),
-              _buildScopeChip(Icons.menu_book_rounded, subjects),
-            ],
-          ),
-          const SizedBox(height: 14),
-          InkWell(
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => const TeacherStudentsScreen(),
-              ),
+          const Spacer(),
+          Text(
+            title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontWeight: FontWeight.w800,
+              fontSize: 13,
+              letterSpacing: -0.2,
+              color: AppColors.textPrimary,
             ),
-            borderRadius: BorderRadius.circular(14),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.48),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: Colors.white.withOpacity(0.75)),
-              ),
-              child: const Row(
-                children: [
-                  Icon(Icons.people_alt_rounded, size: 18, color: AppColors.primary),
-                  SizedBox(width: 8),
-                  Text(
-                    'View Enrolled Students',
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.primary,
-                    ),
-                  ),
-                  Spacer(),
-                  Icon(Icons.arrow_forward_ios_rounded, size: 12, color: AppColors.primary),
-                ],
-              ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            subtitle,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: AppColors.textSecondary,
+              fontSize: 10,
+              fontWeight: FontWeight.w500,
             ),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildScopeChip(IconData icon, String text) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(14),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [
-                Colors.white.withOpacity(0.55),
-                Colors.white.withOpacity(0.25),
-              ],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-            border: Border.all(color: Colors.white.withOpacity(0.7)),
-            borderRadius: BorderRadius.circular(14),
-          ),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 260),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(icon, size: 14, color: AppColors.primary),
-                const SizedBox(width: 6),
-                Flexible(
-                  child: Text(
-                    text,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.textPrimary,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
       ),
     );
   }
@@ -574,21 +1058,22 @@ class _TeacherDashboardState extends ConsumerState<TeacherDashboard> {
     final statusColor = failedCount > 0 ? AppColors.error : AppColors.success;
 
     return GlassCard(
-      padding: const EdgeInsets.all(18),
+      radius: 16,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
       tint: failedCount > 0 ? AppColors.error : null,
       onTap: () => _showBackupStatusModal(context),
       child: Row(
         children: [
           Container(
-            padding: const EdgeInsets.all(12),
+            padding: const EdgeInsets.all(9),
             decoration: BoxDecoration(
               color: statusColor.withOpacity(0.15),
-              borderRadius: BorderRadius.circular(16),
+              borderRadius: BorderRadius.circular(12),
               border: Border.all(color: statusColor.withOpacity(0.3)),
             ),
-            child: Icon(Icons.cloud_sync_rounded, color: statusColor, size: 24),
+            child: Icon(Icons.cloud_sync_rounded, color: statusColor, size: 18),
           ),
-          const SizedBox(width: 14),
+          const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -596,18 +1081,20 @@ class _TeacherDashboardState extends ConsumerState<TeacherDashboard> {
                 const Text(
                   'Google Drive Backup Status',
                   style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 15,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 13.5,
                     color: AppColors.textPrimary,
                   ),
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: 2),
                 Text(
                   failedCount > 0
                       ? '$failedCount failed backup(s) • Tap to review and retry'
                       : '$completedCount tests safely archived in Google Drive',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    fontSize: 12,
+                    fontSize: 11,
                     fontWeight: FontWeight.w500,
                     color: failedCount > 0
                         ? AppColors.error
@@ -617,9 +1104,10 @@ class _TeacherDashboardState extends ConsumerState<TeacherDashboard> {
               ],
             ),
           ),
+          const SizedBox(width: 6),
           const Icon(
             Icons.arrow_forward_ios_rounded,
-            size: 14,
+            size: 12,
             color: AppColors.textMuted,
           ),
         ],
@@ -644,13 +1132,13 @@ class _TeacherDashboardState extends ConsumerState<TeacherDashboard> {
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
                   colors: [
-                    Colors.white.withOpacity(0.72),
+                    Colors.white.withOpacity(0.74),
                     Colors.white.withOpacity(0.50),
                   ],
                 ),
                 border: Border(
                   top: BorderSide(
-                    color: Colors.white.withOpacity(0.8),
+                    color: Colors.white.withOpacity(0.85),
                     width: 1.2,
                   ),
                 ),
@@ -813,351 +1301,6 @@ class _TeacherDashboardState extends ConsumerState<TeacherDashboard> {
   }
 
   // ---------------------------------------------------------------------------
-  // Welcome banner (gradient hero with a glass overlay pane)
-  // ---------------------------------------------------------------------------
-  Widget _buildWelcomeBanner() {
-    return Container(
-      width: double.infinity,
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: AppColors.primaryGradient,
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(34),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.primary.withOpacity(0.35),
-            blurRadius: 28,
-            offset: const Offset(0, 14),
-          ),
-        ],
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(34),
-        child: Stack(
-          children: [
-            // Decorative glass bubbles
-            Positioned(
-              right: -30,
-              top: -30,
-              child: Container(
-                width: 150,
-                height: 150,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [
-                      Colors.white.withOpacity(0.30),
-                      Colors.white.withOpacity(0.04),
-                    ],
-                  ),
-                  border: Border.all(color: Colors.white.withOpacity(0.35)),
-                ),
-              ),
-            ),
-            Positioned(
-              right: 36,
-              bottom: -26,
-              child: Container(
-                width: 90,
-                height: 90,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [
-                      Colors.white.withOpacity(0.22),
-                      Colors.white.withOpacity(0.02),
-                    ],
-                  ),
-                  border: Border.all(color: Colors.white.withOpacity(0.28)),
-                ),
-              ),
-            ),
-            Positioned(
-              right: 22,
-              top: 22,
-              child: Icon(
-                Icons.school_rounded,
-                color: Colors.white.withOpacity(0.5),
-                size: 72,
-              ),
-            ),
-            // Top specular sheen
-            Positioned(
-              left: 0,
-              right: 0,
-              top: 0,
-              height: 80,
-              child: IgnorePointer(
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [
-                        Colors.white.withOpacity(0.22),
-                        Colors.white.withOpacity(0.0),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Welcome Back,',
-                    style: TextStyle(
-                      color: Colors.white70,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    _teacherName,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 32,
-                      fontWeight: FontWeight.w900,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 8),
-                  const Text(
-                    'Create and manage AI-powered MCQ tests',
-                    style: TextStyle(
-                      color: Colors.white70,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                  const SizedBox(height: 18),
-                  Wrap(
-                    spacing: 10,
-                    runSpacing: 8,
-                    children: [
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(30),
-                        child: BackdropFilter(
-                          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 14,
-                              vertical: 8,
-                            ),
-                            decoration: BoxDecoration(
-                              color: Colors.white.withOpacity(0.20),
-                              borderRadius: BorderRadius.circular(30),
-                              border: Border.all(
-                                color: Colors.white.withOpacity(0.45),
-                              ),
-                            ),
-                            child: const Text(
-                              'Ready to evaluate?',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 12,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                      InkWell(
-                        onTap: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) =>
-                                TeacherProfileScreen(initialUser: widget.user),
-                          ),
-                        ).then((_) => _loadTeacherData()),
-                        borderRadius: BorderRadius.circular(30),
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(30),
-                          child: BackdropFilter(
-                            filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 14,
-                                vertical: 8,
-                              ),
-                              decoration: BoxDecoration(
-                                color: Colors.white.withOpacity(0.30),
-                                borderRadius: BorderRadius.circular(30),
-                                border: Border.all(
-                                  color: Colors.white.withOpacity(0.60),
-                                ),
-                              ),
-                              child: const Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(Icons.person_outline_rounded,
-                                      size: 14, color: Colors.white),
-                                  SizedBox(width: 5),
-                                  Text(
-                                    'Faculty Profile',
-                                    style: TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSectionHeader({
-    required String title,
-    required String subtitle,
-  }) {
-    return Row(
-      children: [
-        Container(
-          width: 5,
-          height: 34,
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [AppColors.primary, AppColors.primaryLight],
-            ),
-            borderRadius: BorderRadius.circular(20),
-            boxShadow: [
-              BoxShadow(
-                color: AppColors.primary.withOpacity(0.35),
-                blurRadius: 8,
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                title,
-                style: const TextStyle(
-                  fontSize: 24,
-                  fontWeight: FontWeight.w900,
-                  color: AppColors.textPrimary,
-                ),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                subtitle,
-                style: const TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w500,
-                  color: AppColors.textSecondary,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  // ---------------------------------------------------------------------------
-  // Quick action tile
-  // ---------------------------------------------------------------------------
-  Widget _buildDashboardCard(
-    BuildContext context, {
-    required String title,
-    required String subtitle,
-    required IconData icon,
-    required List<Color> gradient,
-    required VoidCallback onTap,
-  }) {
-    return GlassCard(
-      onTap: onTap,
-      tint: gradient.first,
-      padding: const EdgeInsets.all(18),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: gradient,
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: Colors.white.withOpacity(0.5)),
-                  boxShadow: [
-                    BoxShadow(
-                      color: gradient.first.withOpacity(0.40),
-                      blurRadius: 16,
-                      offset: const Offset(0, 8),
-                    ),
-                  ],
-                ),
-                child: Icon(icon, color: Colors.white, size: 26),
-              ),
-              const Spacer(),
-              const Icon(
-                Icons.arrow_forward_ios_rounded,
-                size: 14,
-                color: AppColors.textMuted,
-              ),
-            ],
-          ),
-          const Spacer(),
-          Text(
-            title,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              fontWeight: FontWeight.w900,
-              fontSize: 18,
-              color: AppColors.textPrimary,
-            ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            subtitle,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              color: AppColors.textSecondary,
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ---------------------------------------------------------------------------
   // AI key selector
   // ---------------------------------------------------------------------------
   Widget _buildApiKeySelector(
@@ -1175,23 +1318,12 @@ class _TeacherDashboardState extends ConsumerState<TeacherDashboard> {
         }
 
         return GlassCard(
-          padding: const EdgeInsets.all(16),
+          radius: 16,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           child: Row(
             children: [
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.5),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: Colors.white.withOpacity(0.7)),
-                ),
-                child: const Icon(
-                  Icons.vpn_key_rounded,
-                  color: AppColors.primary,
-                  size: 22,
-                ),
-              ),
-              const SizedBox(width: 14),
+              _iconBadge(Icons.vpn_key_rounded, AppColors.primary),
+              const SizedBox(width: 10),
               Expanded(
                 child: keys.isEmpty
                     ? const Column(
@@ -1200,17 +1332,17 @@ class _TeacherDashboardState extends ConsumerState<TeacherDashboard> {
                           Text(
                             'AI Provider',
                             style: TextStyle(
-                              fontSize: 12,
+                              fontSize: 10.5,
                               color: AppColors.textSecondary,
                               fontWeight: FontWeight.w600,
                             ),
                           ),
-                          SizedBox(height: 4),
+                          SizedBox(height: 1),
                           Text(
                             'No keys added',
                             style: TextStyle(
                               color: AppColors.textMuted,
-                              fontSize: 15,
+                              fontSize: 13,
                               fontWeight: FontWeight.w700,
                             ),
                           ),
@@ -1225,9 +1357,12 @@ class _TeacherDashboardState extends ConsumerState<TeacherDashboard> {
                               : keys.first,
                           isExpanded: true,
                           itemHeight: null,
-                          borderRadius: BorderRadius.circular(20),
+                          borderRadius: BorderRadius.circular(16),
                           dropdownColor: Colors.white.withOpacity(0.95),
-                          icon: const Icon(Icons.keyboard_arrow_down_rounded),
+                          icon: const Icon(
+                            Icons.keyboard_arrow_down_rounded,
+                            size: 20,
+                          ),
                           items: keys.map((key) {
                             return DropdownMenuItem<ApiKey>(
                               value: key,
@@ -1236,8 +1371,8 @@ class _TeacherDashboardState extends ConsumerState<TeacherDashboard> {
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: const TextStyle(
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w800,
+                                  fontSize: 13.5,
+                                  fontWeight: FontWeight.w700,
                                   color: AppColors.textPrimary,
                                 ),
                               ),
@@ -1254,6 +1389,8 @@ class _TeacherDashboardState extends ConsumerState<TeacherDashboard> {
               ),
               const SizedBox(width: 8),
               Container(
+                width: 32,
+                height: 32,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   gradient: const LinearGradient(
@@ -1265,14 +1402,20 @@ class _TeacherDashboardState extends ConsumerState<TeacherDashboard> {
                   boxShadow: [
                     BoxShadow(
                       color: AppColors.primary.withOpacity(0.35),
-                      blurRadius: 12,
-                      offset: const Offset(0, 5),
+                      blurRadius: 8,
+                      offset: const Offset(0, 3),
                     ),
                   ],
                 ),
                 child: IconButton(
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
                   onPressed: () => _showAddKeyDialog(context, ref),
-                  icon: const Icon(Icons.add_rounded, color: Colors.white),
+                  icon: const Icon(
+                    Icons.add_rounded,
+                    color: Colors.white,
+                    size: 18,
+                  ),
                   tooltip: 'Add New AI Key',
                 ),
               ),

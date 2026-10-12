@@ -51,6 +51,25 @@ class SupabaseService {
     } catch (e) {
       firstError = e;
       debugPrint('Initial signInWithPassword failed: $e. Checking auto-sync...');
+
+      // If error is schema scan failure (NULL tokens in auth.users) or server error, attempt auto-repair
+      final errStr = e.toString().toLowerCase();
+      if (errStr.contains('database error querying schema') ||
+          errStr.contains('unexpected_failure') ||
+          errStr.contains('statuscode: 500') ||
+          errStr.contains('converting null to string')) {
+        try {
+          debugPrint('Attempting auto-repair via repair_auth_users RPC...');
+          await supabase.rpc('repair_auth_users');
+          // Retry login immediately after repair
+          response = await supabase.auth.signInWithPassword(
+            email: cleanEmail,
+            password: cleanPassword,
+          );
+        } catch (repairErr) {
+          debugPrint('repair_auth_users attempt failed: $repairErr');
+        }
+      }
     }
 
     // 2. Fallback: Check teacher_temp_login RPC and handle prefix variances (#)
@@ -736,9 +755,15 @@ class SupabaseService {
       'name': name,
       'is_active': true,
       'must_change_password': true,
+      'temporary_password': temporaryPassword,
       'institution': institution,
       'academic_year': academicYear,
     });
+
+    // Auto-repair tokens to ensure teacher can log in immediately
+    try {
+      await supabase.rpc('repair_auth_users');
+    } catch (_) {}
 
     // Handle "Both" medium shortcut
     List<String> targetMediums = List.from(mediums);
@@ -779,11 +804,12 @@ class SupabaseService {
   }
 
   Future<void> resetTeacherPassword(String teacherId, String temporaryPassword) async {
+    final cleanPw = temporaryPassword.trim();
     // 1. Try atomic PostgreSQL RPC function
     try {
       await supabase.rpc('admin_reset_teacher_password', params: {
         'p_teacher_id': teacherId,
-        'p_new_password': temporaryPassword,
+        'p_new_password': cleanPw,
       });
       debugPrint('✅ Password reset via admin_reset_teacher_password RPC for: $teacherId');
       return;
@@ -793,8 +819,14 @@ class SupabaseService {
 
     // 2. Direct fallback
     await supabase.from('users').update({
+      'temporary_password': cleanPw,
       'must_change_password': true,
+      'is_active': true,
     }).eq('id', teacherId);
+
+    try {
+      await supabase.rpc('repair_auth_users');
+    } catch (_) {}
   }
 
   Future<void> setTeacherStatus(String teacherId, bool isActive) async {
@@ -966,7 +998,7 @@ class SupabaseService {
       final response = await supabase
           .from('tests')
           .select()
-          .eq('test_code', normalizedCode)
+          .ilike('test_code', normalizedCode)
           .eq('status', 'published')
           .maybeSingle();
 
