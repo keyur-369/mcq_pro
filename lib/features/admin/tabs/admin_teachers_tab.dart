@@ -426,6 +426,15 @@ class _AdminTeachersTabState extends State<AdminTeachersTab>
                   teacher: teacher,
                   onResetPassword: () => _showResetPasswordDialog(teacher),
                   onToggleStatus: (newStatus) => _toggleTeacherStatus(teacher, newStatus),
+                  onEdit: () async {
+                    final updated = await Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => AdminCreateTeacherScreen(teacher: teacher),
+                      ),
+                    );
+                    if (updated == true) widget.onRefresh();
+                  },
                 ),
               ),
             ),

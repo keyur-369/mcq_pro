@@ -204,11 +204,20 @@ class AppTheme {
         backgroundColor: AppColors.cardLight,
         side: const BorderSide(color: AppColors.border),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-        labelStyle: GoogleFonts.outfit(
-          fontWeight: FontWeight.w600,
-          fontSize: 13,
-          color: AppColors.textSecondary,
-        ),
+        labelStyle: WidgetStateTextStyle.resolveWith((states) {
+          if (states.contains(WidgetState.selected)) {
+            return GoogleFonts.outfit(
+              fontWeight: FontWeight.w600,
+              fontSize: 13,
+              color: Colors.white,
+            );
+          }
+          return GoogleFonts.outfit(
+            fontWeight: FontWeight.w600,
+            fontSize: 13,
+            color: AppColors.textSecondary,
+          );
+        }),
         secondaryLabelStyle: GoogleFonts.outfit(
           fontWeight: FontWeight.w600,
           fontSize: 13,

@@ -16,7 +16,7 @@ class SupabaseService {
   factory SupabaseService() => _instance;
   SupabaseService._internal();
 
-  final supabase = Supabase.instance.client;
+  SupabaseClient get supabase => Supabase.instance.client;
 
   static const String supabaseUrl = 'https://hlygfkobyemsjgjuqdhi.supabase.co';
   static const String supabaseAnonKey =
@@ -640,6 +640,26 @@ class SupabaseService {
   }) async {
     final cleanEmail = email.trim().toLowerCase();
 
+    // Backend validation for institution-division compatibility
+    final normInst = institution.trim().toLowerCase();
+    final isAcc = normInst.contains('acc');
+    final canonicalInstitution = isAcc ? 'Tuition ACC' : 'Sharda Mandir';
+
+    if (isAcc) {
+      for (final d in divisions) {
+        if (d.trim().toUpperCase() != 'ACC') {
+          throw 'Invalid division "$d" for Tuition ACC. Only "ACC" is allowed.';
+        }
+      }
+    } else {
+      for (final d in divisions) {
+        final upper = d.trim().toUpperCase();
+        if (upper != 'A' && upper != 'B' && upper != 'C') {
+          throw 'Invalid division "$d" for Sharda Mandir. Only "A", "B", and "C" are allowed.';
+        }
+      }
+    }
+
     // 1. Try hitting the backend API first
     try {
       final url = Uri.parse('$backendBaseUrl/api/admin/teachers');
@@ -787,6 +807,79 @@ class SupabaseService {
             assignments.add({
               'teacher_id': teacherId,
               'institution': institution,
+              'academic_year': academicYear,
+              'standard': std,
+              'division': div,
+              'medium': med,
+              'subject': sub,
+            });
+          }
+        }
+      }
+    }
+
+    if (assignments.isNotEmpty) {
+      await supabase.from('teacher_assignments').insert(assignments);
+    }
+  }
+
+  Future<void> updateTeacher({
+    required String teacherId,
+    required String name,
+    required List<String> standards,
+    required List<String> divisions,
+    required List<String> mediums,
+    required List<String> subjects,
+    String institution = 'Sharda Mandir',
+    String academicYear = '2026-2027',
+  }) async {
+    // Backend validation for institution-division compatibility
+    final normInst = institution.trim().toLowerCase();
+    final isAcc = normInst.contains('acc');
+    final canonicalInstitution = isAcc ? 'Tuition ACC' : 'Sharda Mandir';
+
+    if (isAcc) {
+      for (final d in divisions) {
+        if (d.trim().toUpperCase() != 'ACC') {
+          throw 'Invalid division "$d" for Tuition ACC. Only "ACC" is allowed.';
+        }
+      }
+    } else {
+      for (final d in divisions) {
+        final upper = d.trim().toUpperCase();
+        if (upper != 'A' && upper != 'B' && upper != 'C') {
+          throw 'Invalid division "$d" for Sharda Mandir. Only "A", "B", and "C" are allowed.';
+        }
+      }
+    }
+
+    // 1. Update user profile in public.users
+    await supabase.from('users').update({
+      'name': name.trim(),
+      'institution': canonicalInstitution,
+      'academic_year': academicYear,
+    }).eq('id', teacherId);
+
+    // 2. Handle mediums shortcut
+    List<String> targetMediums = List.from(mediums);
+    if (targetMediums.contains('Both')) {
+      targetMediums = ['Gujarati', 'English'];
+    }
+
+    // 3. Atomically replace assignments
+    await supabase
+        .from('teacher_assignments')
+        .delete()
+        .eq('teacher_id', teacherId);
+
+    final assignments = <Map<String, dynamic>>[];
+    for (var std in standards) {
+      for (var div in divisions) {
+        for (var med in targetMediums) {
+          for (var sub in subjects) {
+            assignments.add({
+              'teacher_id': teacherId,
+              'institution': canonicalInstitution,
               'academic_year': academicYear,
               'standard': std,
               'division': div,

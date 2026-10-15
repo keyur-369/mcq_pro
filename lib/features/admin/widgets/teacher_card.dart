@@ -7,12 +7,14 @@ class TeacherCard extends StatelessWidget {
   final AppUser teacher;
   final VoidCallback? onResetPassword;
   final ValueChanged<bool>? onToggleStatus;
+  final VoidCallback? onEdit;
 
   const TeacherCard({
     super.key,
     required this.teacher,
     this.onResetPassword,
     this.onToggleStatus,
+    this.onEdit,
   });
 
   @override
@@ -155,6 +157,18 @@ class TeacherCard extends StatelessWidget {
             spacing: 4,
             runSpacing: 2,
             children: [
+              if (onEdit != null)
+                TextButton.icon(
+                  onPressed: onEdit,
+                  icon: const Icon(Icons.edit_outlined, size: 15),
+                  label: const Text('Edit Scope'),
+                  style: TextButton.styleFrom(
+                    foregroundColor: AppColors.primary,
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    visualDensity: VisualDensity.compact,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                ),
               TextButton.icon(
                 onPressed: onResetPassword,
                 icon: const Icon(Icons.lock_reset_rounded, size: 15),
