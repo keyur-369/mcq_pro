@@ -7,6 +7,7 @@ import 'package:mcq_test_app/core/constants/app_colors.dart';
 import 'package:mcq_test_app/core/services/supabase_service.dart';
 import 'package:mcq_test_app/core/widgets/app_gradient_background.dart';
 import 'package:mcq_test_app/features/admin/screens/admin_create_teacher_screen.dart';
+import 'package:mcq_test_app/features/admin/screens/admin_gemini_keys_screen.dart';
 import 'package:mcq_test_app/features/admin/screens/admin_password_vault_screen.dart';
 import 'package:mcq_test_app/features/admin/tabs/admin_analytics_tab.dart';
 import 'package:mcq_test_app/features/admin/tabs/admin_audit_tab.dart';
@@ -181,6 +182,13 @@ class _AdminDashboardState extends State<AdminDashboard>
     Navigator.push(
       context,
       MaterialPageRoute(builder: (_) => const AdminPasswordVaultScreen()),
+    );
+  }
+
+  void _openGeminiKeys() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const AdminGeminiKeysScreen()),
     );
   }
 
@@ -575,6 +583,13 @@ class _AdminDashboardState extends State<AdminDashboard>
                               icon: Icons.vpn_key_rounded,
                               label: 'Password Vault',
                               onTap: _openPasswordVault,
+                            ),
+                            const SizedBox(width: 10),
+                            _QuickAction(
+                              animation: _glassController,
+                              icon: Icons.auto_awesome_rounded,
+                              label: 'Gemini Keys',
+                              onTap: _openGeminiKeys,
                             ),
                           ],
                         ),

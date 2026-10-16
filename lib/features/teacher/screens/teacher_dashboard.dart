@@ -1339,7 +1339,7 @@ class _TeacherDashboardState extends ConsumerState<TeacherDashboard> {
                           ),
                           SizedBox(height: 1),
                           Text(
-                            'No keys added',
+                            'No keys configured by admin',
                             style: TextStyle(
                               color: AppColors.textMuted,
                               fontSize: 13,
@@ -1387,38 +1387,6 @@ class _TeacherDashboardState extends ConsumerState<TeacherDashboard> {
                         ),
                       ),
               ),
-              const SizedBox(width: 8),
-              Container(
-                width: 32,
-                height: 32,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: const LinearGradient(
-                    colors: [AppColors.primary, AppColors.primaryLight],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                  border: Border.all(color: Colors.white.withOpacity(0.6)),
-                  boxShadow: [
-                    BoxShadow(
-                      color: AppColors.primary.withOpacity(0.35),
-                      blurRadius: 8,
-                      offset: const Offset(0, 3),
-                    ),
-                  ],
-                ),
-                child: IconButton(
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(),
-                  onPressed: () => _showAddKeyDialog(context, ref),
-                  icon: const Icon(
-                    Icons.add_rounded,
-                    color: Colors.white,
-                    size: 18,
-                  ),
-                  tooltip: 'Add New AI Key',
-                ),
-              ),
             ],
           ),
         );
@@ -1427,89 +1395,5 @@ class _TeacherDashboardState extends ConsumerState<TeacherDashboard> {
       error: (e, s) => const SizedBox.shrink(),
     );
   }
-
-  void _showAddKeyDialog(BuildContext context, WidgetRef ref) {
-    final keyController = TextEditingController();
-
-    showDialog(
-      context: context,
-      barrierColor: Colors.black.withOpacity(0.25),
-      builder: (context) => BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
-        child: AlertDialog(
-          backgroundColor: Colors.white.withOpacity(0.88),
-          surfaceTintColor: Colors.transparent,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(28),
-            side: BorderSide(color: Colors.white.withOpacity(0.8)),
-          ),
-          title: const Text(
-            'Add Gemini API Key',
-            style: TextStyle(
-              color: AppColors.textPrimary,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text(
-                'Paste your Gemini API key below. The name will be automatically generated.',
-                style: TextStyle(fontSize: 13, color: AppColors.textSecondary),
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: keyController,
-                decoration: const InputDecoration(
-                  labelText: 'API Key',
-                  hintText: 'AIzaSy...',
-                  prefixIcon: Icon(Icons.key_rounded),
-                ),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: () async {
-                if (keyController.text.isNotEmpty) {
-                  try {
-                    final currentKeys = ref.read(apiKeysProvider).value ?? [];
-                    final nextNumber = currentKeys.length + 1;
-                    final autoName = 'Gemini Key $nextNumber';
-
-                    await SupabaseService().addApiKey(
-                      autoName,
-                      keyController.text.trim(),
-                    );
-
-                    if (context.mounted) {
-                      Navigator.pop(context);
-                      ref.invalidate(apiKeysProvider);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('$autoName added successfully')),
-                      );
-                    }
-                  } catch (e) {
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text('Failed to add key: $e'),
-                          backgroundColor: AppColors.error,
-                        ),
-                      );
-                    }
-                  }
-                }
-              },
-              child: const Text('Add Key'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 }
+

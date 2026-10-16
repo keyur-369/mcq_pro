@@ -364,34 +364,12 @@ class _AdminTeachersTabState extends State<AdminTeachersTab>
                   ),
                   const SizedBox(height: 6),
                   const Text(
-                    'Use the button below or "Run Query Tests" in Diagnostics above to verify database records.',
+                    'Use the "+ Add Teacher" button below to create and register a new teacher.',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       fontSize: 12,
                       color: AppColors.textSecondary,
                     ),
-                  ),
-                  const SizedBox(height: 20),
-                  ElevatedButton.icon(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.primary,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                    onPressed: () async {
-                      final created = await Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const AdminCreateTeacherScreen(),
-                        ),
-                      );
-                      if (created == true) widget.onRefresh();
-                    },
-                    icon: const Icon(Icons.person_add_rounded, size: 18),
-                    label: const Text('Add First Teacher'),
                   ),
                 ],
               ),

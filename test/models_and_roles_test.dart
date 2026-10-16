@@ -354,6 +354,35 @@ void main() {
 
       expect(resolveRoute(invalidUser), equals('unauthorized'));
     });
+
+    test('Student default compulsory subjects and stream elective subjects', () {
+      final bioStudent = AppUser.fromMap({
+        'id': 's-bio',
+        'role': 'student',
+        'email': 'bio@mcq.com',
+        'student_group': 'Biology',
+      });
+
+      expect(bioStudent.enrolledSubjects, equals(['Physics', 'Chemistry', 'Biology']));
+      expect(bioStudent.takesSubject('Physics'), isTrue);
+      expect(bioStudent.takesSubject('Chemistry'), isTrue);
+      expect(bioStudent.takesSubject('Biology'), isTrue);
+      expect(bioStudent.takesSubject('Math'), isFalse);
+
+      final mathStudent = AppUser.fromMap({
+        'id': 's-math',
+        'role': 'student',
+        'email': 'math@mcq.com',
+        'student_group': 'Math',
+      });
+
+      expect(mathStudent.enrolledSubjects, equals(['Physics', 'Chemistry', 'Math']));
+      expect(mathStudent.takesSubject('Physics'), isTrue);
+      expect(mathStudent.takesSubject('Chemistry'), isTrue);
+      expect(mathStudent.takesSubject('Math'), isTrue);
+      expect(mathStudent.takesSubject('Maths'), isTrue);
+      expect(mathStudent.takesSubject('Biology'), isFalse);
+    });
   });
 }
 

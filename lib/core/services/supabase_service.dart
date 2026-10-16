@@ -207,6 +207,9 @@ class SupabaseService {
     String academicYear = '2026-2027',
   }) async {
     final cleanEmail = email.trim().toLowerCase();
+    final effectiveGroup = (studentGroup != null && studentGroup.trim().isNotEmpty)
+        ? studentGroup.trim()
+        : 'Biology';
     final response = await supabase.auth.signUp(
       email: cleanEmail,
       password: password,
@@ -216,7 +219,7 @@ class SupabaseService {
         'class': int.tryParse(studentClass),
         'division': division,
         'medium': medium,
-        'student_group': studentGroup,
+        'student_group': effectiveGroup,
         'institution': institution,
         'academic_year': academicYear,
       },
@@ -262,7 +265,7 @@ class SupabaseService {
           'division': division,
           'medium': medium,
           'roll_no': allocatedRollNo,
-          'student_group': studentGroup,
+          'student_group': effectiveGroup,
           'institution': institution,
           'academic_year': academicYear,
           'is_active': true,
@@ -277,7 +280,7 @@ class SupabaseService {
           'standard': studentClass,
           'division': division,
           'medium': medium,
-          'student_group': studentGroup,
+          'student_group': effectiveGroup,
           'roll_no': allocatedRollNo,
         });
       } catch (profileErr) {
@@ -308,6 +311,9 @@ class SupabaseService {
     final division = meta['division']?.toString() ?? 'A';
     final medium = meta['medium']?.toString() ?? 'English';
     final studentGroup = meta['student_group']?.toString();
+    final effectiveGroup = (studentGroup != null && studentGroup.trim().isNotEmpty)
+        ? studentGroup.trim()
+        : 'Biology';
     final institution = meta['institution']?.toString() ?? 'Sharda Mandir';
     final academicYear = meta['academic_year']?.toString() ?? '2026-2027';
 
@@ -347,7 +353,7 @@ class SupabaseService {
       'division': division,
       'medium': medium,
       'roll_no': allocatedRollNo,
-      'student_group': studentGroup,
+      'student_group': effectiveGroup,
       'institution': institution,
       'academic_year': academicYear,
       'is_active': true,
@@ -362,7 +368,7 @@ class SupabaseService {
       'standard': studentClass,
       'division': division,
       'medium': medium,
-      'student_group': studentGroup,
+      'student_group': effectiveGroup,
       'roll_no': allocatedRollNo,
     });
   }
@@ -1278,6 +1284,7 @@ class SupabaseService {
   }
 
   // ── API Keys ──────────────────────────────────────────────────────────────
+  /// Fetches only active API keys (used by Teachers for test generation).
   Future<List<ApiKey>> getApiKeys() async {
     try {
       final response = await supabase
@@ -1293,28 +1300,85 @@ class SupabaseService {
     }
   }
 
-  Future<void> addApiKey(String name, String key) async {
+  /// Fetches all API keys including inactive ones (for Admin dashboard).
+  Future<List<ApiKey>> getAllApiKeysForAdmin() async {
+    try {
+      final response = await supabase
+          .from('gemini_api_keys')
+          .select()
+          .order('created_at', ascending: false);
+
+      return (response as List).map((e) => ApiKey.fromMap(e)).toList();
+    } catch (e) {
+      debugPrint('Error fetching all API keys for admin: $e');
+      return [];
+    }
+  }
+
+  /// Adds a new Gemini API key (Admin only).
+  Future<void> addApiKey(String name, String key, {bool isActive = true}) async {
     await supabase.from('gemini_api_keys').insert({
-      'name': name,
-      'api_key': key,
-      'is_active': true,
+      'name': name.trim(),
+      'api_key': key.trim(),
+      'is_active': isActive,
       'tokens_used': 0,
     });
   }
 
-  Future<void> incrementTokenUsage(String keyId, int tokens) async {
-    final response = await supabase
-        .from('gemini_api_keys')
-        .select('tokens_used')
-        .eq('id', keyId)
-        .maybeSingle();
+  /// Updates an existing Gemini API key details (Admin only).
+  Future<void> updateApiKey({
+    required String id,
+    required String name,
+    required String key,
+    required bool isActive,
+  }) async {
+    await supabase.from('gemini_api_keys').update({
+      'name': name.trim(),
+      'api_key': key.trim(),
+      'is_active': isActive,
+    }).eq('id', id);
+  }
 
-    if (response != null) {
-      final currentTokens = response['tokens_used'] as int? ?? 0;
-      await supabase
-          .from('gemini_api_keys')
-          .update({'tokens_used': currentTokens + tokens})
-          .eq('id', keyId);
+  /// Toggles active status of an API key (Admin only).
+  Future<void> toggleApiKeyStatus(String id, bool isActive) async {
+    await supabase
+        .from('gemini_api_keys')
+        .update({'is_active': isActive})
+        .eq('id', id);
+  }
+
+  /// Deletes a Gemini API key (Admin only).
+  Future<void> deleteApiKey(String id) async {
+    await supabase.from('gemini_api_keys').delete().eq('id', id);
+  }
+
+  /// Increments token usage counter (supports both RPC and direct table update).
+  Future<void> incrementTokenUsage(String keyId, int tokens) async {
+    try {
+      // Try security-definer RPC function first
+      await supabase.rpc('increment_gemini_token_usage', params: {
+        'p_key_id': keyId,
+        'p_tokens': tokens,
+      });
+    } catch (_) {
+      // Fallback to direct table update if RPC is not yet created
+      try {
+        final response = await supabase
+            .from('gemini_api_keys')
+            .select('tokens_used')
+            .eq('id', keyId)
+            .maybeSingle();
+
+        if (response != null) {
+          final currentTokens = response['tokens_used'] as int? ?? 0;
+          await supabase
+              .from('gemini_api_keys')
+              .update({'tokens_used': currentTokens + tokens})
+              .eq('id', keyId);
+        }
+      } catch (e) {
+        debugPrint('Error incrementing tokens: $e');
+      }
     }
   }
 }

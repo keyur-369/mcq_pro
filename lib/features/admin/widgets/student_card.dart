@@ -179,7 +179,8 @@ class StudentCard extends StatelessWidget {
               _buildMetaChip(Icons.school_rounded, 'Std $std • Div $div'),
               _buildMetaChip(Icons.language_rounded, '$medium Medium'),
               if (group != null && group.isNotEmpty)
-                _buildMetaChip(Icons.science_outlined, group),
+                _buildMetaChip(Icons.science_outlined, 'Group: $group'),
+              _buildMetaChip(Icons.menu_book_rounded, student.enrolledSubjects.join(', ')),
               if (student.institution != null && student.institution!.isNotEmpty)
                 _buildMetaChip(Icons.account_balance_outlined, student.institution!),
             ],

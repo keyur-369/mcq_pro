@@ -219,7 +219,8 @@ class _AdminStudentsTabState extends State<AdminStudentsTab>
       _Detail(Icons.groups_rounded, 'Division', '${student.division ?? "-"}'),
       _Detail(Icons.translate_rounded, 'Medium', '${student.medium ?? "-"}'),
       if (student.studentGroup != null && student.studentGroup!.isNotEmpty)
-        _Detail(Icons.category_rounded, 'Group', student.studentGroup!),
+        _Detail(Icons.category_rounded, 'Selected Group', student.studentGroup!),
+      _Detail(Icons.collections_bookmark_rounded, 'Enrolled Subjects', student.enrolledSubjects.join(', ')),
       if (student.academicYear != null && student.academicYear!.isNotEmpty)
         _Detail(Icons.event_rounded, 'Academic Year', student.academicYear!),
     ];

@@ -35,6 +35,43 @@ class AppUser {
   bool get isTeacher => role == 'teacher';
   bool get isStudent => role == 'student';
 
+  /// Default compulsory subjects for all science students
+  static const List<String> defaultCompulsorySubjects = ['Physics', 'Chemistry'];
+
+  /// Full list of enrolled subjects for this student:
+  /// Includes compulsory subjects (Physics, Chemistry) + elective stream based on studentGroup (Biology or Math)
+  List<String> get enrolledSubjects {
+    final grp = (studentGroup ?? '').trim().toLowerCase();
+    final list = List<String>.from(defaultCompulsorySubjects);
+    if (grp.contains('bio') || grp == 'b') {
+      list.add('Biology');
+    } else if (grp.contains('math') || grp == 'a') {
+      list.add('Math');
+    } else {
+      // Default to Biology if unspecified
+      list.add('Biology');
+    }
+    return list;
+  }
+
+  /// Checks if this student takes a specific subject (e.g. 'Physics', 'Chemistry', 'Biology', 'Math')
+  bool takesSubject(String subject) {
+    final sub = subject.trim().toLowerCase();
+    final grp = (studentGroup ?? '').trim().toLowerCase();
+
+    // Physics and Chemistry are default/compulsory for all students
+    if (sub == 'physics' || sub == 'physical' || sub == 'chemistry') {
+      return true;
+    }
+    if (sub == 'biology' || sub == 'bio') {
+      return grp.isEmpty || grp == 'biology' || grp == 'bio' || grp == 'b';
+    }
+    if (sub == 'math' || sub == 'maths' || sub == 'mathematics') {
+      return grp == 'math' || grp == 'maths' || grp == 'a';
+    }
+    return false;
+  }
+
   factory AppUser.fromMap(Map<String, dynamic> map) {
     bool parseBool(dynamic val, bool defaultVal) {
       if (val == null) return defaultVal;

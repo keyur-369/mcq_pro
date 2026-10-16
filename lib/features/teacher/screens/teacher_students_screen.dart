@@ -220,7 +220,12 @@ class _TeacherStudentsScreenState extends State<TeacherStudentsScreen> {
     // 1. Institution check
     final aInst = a.institution.trim().toLowerCase();
     final sInst = (student.institution ?? 'Sharda Mandir').trim().toLowerCase();
-    if (aInst.isNotEmpty && sInst.isNotEmpty && aInst != sInst) {
+    final isAAcc = aInst.contains('acc');
+    final isSAcc = sInst.contains('acc');
+    if (isAAcc != isSAcc) {
+      return false;
+    }
+    if (!isAAcc && aInst.isNotEmpty && sInst.isNotEmpty && aInst != sInst) {
       return false;
     }
 
@@ -232,9 +237,15 @@ class _TeacherStudentsScreenState extends State<TeacherStudentsScreen> {
     }
 
     // 3. Division (div) check
-    final aDiv = a.division.trim().toUpperCase();
-    final sDiv = (student.division ?? '').trim().toUpperCase();
-    if (aDiv != 'ALL' && aDiv != sDiv) {
+    var aDiv = a.division.trim().toUpperCase();
+    var sDiv = (student.division ?? '').trim().toUpperCase();
+    if (aDiv.startsWith('DIV ')) aDiv = aDiv.substring(4).trim();
+    if (sDiv.startsWith('DIV ')) sDiv = sDiv.substring(4).trim();
+
+    // If both belong to Tuition ACC, all students in Tuition ACC belong to ACC division
+    if (isAAcc && isSAcc) {
+      // Tuition ACC only has ACC division, match!
+    } else if (aDiv != 'ALL' && aDiv != sDiv) {
       return false;
     }
 
@@ -250,18 +261,29 @@ class _TeacherStudentsScreenState extends State<TeacherStudentsScreen> {
     }
 
     // 5. Subject & Group compatibility check
+    // Default subjects (Physics & Chemistry) are compulsory for all science students
+    // Elective stream (Biology or Math) is checked based on student's selected subject/group
     final sub = a.subject.trim().toLowerCase();
     final grp = (student.studentGroup ?? '').trim().toLowerCase();
-    if (grp.isNotEmpty) {
-      // Biology group students do not take Math
-      if ((grp == 'biology' || grp == 'b') &&
-          (sub == 'math' || sub == 'maths' || sub == 'mathematics')) {
-        return false;
-      }
-      // Maths group students do not take Biology
-      if ((grp == 'math' || grp == 'maths' || grp == 'a') && sub == 'biology') {
-        return false;
-      }
+
+    final isPhysics = sub == 'physics' || sub == 'physical';
+    final isChemistry = sub == 'chemistry';
+    final isBiology = sub == 'biology' || sub == 'bio';
+    final isMath = sub == 'math' || sub == 'maths' || sub == 'mathematics';
+
+    // Physics and Chemistry are default compulsory subjects for all students
+    if (isPhysics || isChemistry) {
+      return true;
+    }
+
+    // Biology: only matches if student's group is Biology (or default/general)
+    if (isBiology) {
+      return grp.isEmpty || grp == 'biology' || grp == 'bio' || grp == 'b' || grp == 'science';
+    }
+
+    // Math: only matches if student's group is Math/Maths
+    if (isMath) {
+      return grp == 'math' || grp == 'maths' || grp == 'a';
     }
 
     return true;
@@ -1520,10 +1542,10 @@ class _TeacherStudentsScreenState extends State<TeacherStudentsScreen> {
                     _buildBadge('Std $std • $div', AppColors.accent),
                     _buildBadge(medium, AppColors.secondary),
                     if (group != null && group.isNotEmpty)
-                      _buildBadge(group, const Color(0xFF6366F1)),
+                      _buildBadge('Group: $group', const Color(0xFF6366F1)),
                     if (assignedSubjects.isNotEmpty)
                       _buildBadge(
-                        'Subject: ${assignedSubjects.join(', ')}',
+                        'Assigned: ${assignedSubjects.join(', ')}',
                         AppColors.success,
                       ),
                     if (!student.isActive)
@@ -1809,9 +1831,14 @@ class _TeacherStudentsScreenState extends State<TeacherStudentsScreen> {
                               Icons.translate_rounded,
                             ),
                             _buildInfoTile(
-                              'Group',
-                              student.studentGroup ?? 'General',
+                              'Selected Group',
+                              student.studentGroup ?? 'Biology',
                               Icons.category_rounded,
+                            ),
+                            _buildInfoTile(
+                              'Enrolled Subjects',
+                              student.enrolledSubjects.join(', '),
+                              Icons.collections_bookmark_rounded,
                             ),
                             _buildInfoTile(
                               'Institution',

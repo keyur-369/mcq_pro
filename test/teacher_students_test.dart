@@ -122,14 +122,14 @@ void main() {
 
       final sub = a.subject.trim().toLowerCase();
       final grp = (s.studentGroup ?? '').trim().toLowerCase();
-      if (grp.isNotEmpty) {
-        if ((grp == 'biology' || grp == 'b') && (sub == 'math' || sub == 'maths' || sub == 'mathematics')) {
-          return false;
-        }
-        if ((grp == 'math' || grp == 'maths' || grp == 'a') && sub == 'biology') {
-          return false;
-        }
-      }
+      final isPhysics = sub == 'physics' || sub == 'physical';
+      final isChemistry = sub == 'chemistry';
+      final isBiology = sub == 'biology' || sub == 'bio';
+      final isMath = sub == 'math' || sub == 'maths' || sub == 'mathematics';
+
+      if (isPhysics || isChemistry) return true;
+      if (isBiology) return grp.isEmpty || grp == 'biology' || grp == 'bio' || grp == 'b' || grp == 'science';
+      if (isMath) return grp == 'math' || grp == 'maths' || grp == 'a';
       return true;
     }
 
@@ -144,6 +144,34 @@ void main() {
       expect(isStudentUnderTeacher(student3, assignments), isFalse); // Gujarati & Div B
       expect(isStudentUnderTeacher(student4, assignments), isFalse); // Different institution
       expect(isStudentUnderTeacher(student5, assignments), isFalse); // Maths group cannot take Biology
+    });
+
+    test('Physics and Chemistry default subjects match both Biology and Math students', () {
+      final physicsStd12 = TeacherAssignment(
+        id: 'p12',
+        teacherId: 't1',
+        institution: 'Sharda Mandir',
+        standard: '12',
+        division: 'B',
+        medium: 'English',
+        subject: 'Physics',
+      );
+
+      final chemistryStd12 = TeacherAssignment(
+        id: 'c12',
+        teacherId: 't1',
+        institution: 'Sharda Mandir',
+        standard: '12',
+        division: 'B',
+        medium: 'English',
+        subject: 'Chemistry',
+      );
+
+      // Both student2 (Biology) and student5 (Maths) must match Physics and Chemistry
+      expect(isStudentUnderTeacher(student2, [physicsStd12]), isTrue);
+      expect(isStudentUnderTeacher(student5, [physicsStd12]), isTrue);
+      expect(isStudentUnderTeacher(student2, [chemistryStd12]), isTrue);
+      expect(isStudentUnderTeacher(student5, [chemistryStd12]), isTrue);
     });
 
     test('returns empty when teacher has no assignments (triggers simple message)', () {

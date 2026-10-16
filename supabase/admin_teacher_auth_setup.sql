@@ -20,19 +20,36 @@ ALTER TABLE public.users ADD COLUMN IF NOT EXISTS academic_year TEXT DEFAULT '20
 -- (Scan error: converting NULL to string is unsupported) when token columns are NULL.
 -- Converting them to empty strings '' immediately restores authentication!
 -- ----------------------------------------------------------------------------
-UPDATE auth.users
-SET 
-    confirmation_token = COALESCE(confirmation_token, ''),
-    recovery_token = COALESCE(recovery_token, ''),
-    email_change_token_new = COALESCE(email_change_token_new, ''),
-    email_change = COALESCE(email_change, ''),
-    email_confirmed_at = COALESCE(email_confirmed_at, now())
-WHERE 
-    confirmation_token IS NULL 
-    OR recovery_token IS NULL 
-    OR email_change_token_new IS NULL 
-    OR email_change IS NULL
-    OR email_confirmed_at IS NULL;
+DO $$
+DECLARE
+    col RECORD;
+BEGIN
+    -- Dynamically update all text/varchar columns in auth.users that match token fields
+    FOR col IN 
+        SELECT column_name 
+        FROM information_schema.columns 
+        WHERE table_schema = 'auth' 
+          AND table_name = 'users' 
+          AND data_type IN ('text', 'character varying')
+          AND column_name IN (
+            'confirmation_token', 
+            'recovery_token', 
+            'email_change_token_new', 
+            'email_change', 
+            'email_change_token_current', 
+            'phone_change', 
+            'phone_change_token', 
+            'reauthentication_token'
+          )
+    LOOP
+        EXECUTE format('UPDATE auth.users SET %I = COALESCE(%I, '''') WHERE %I IS NULL;', col.column_name, col.column_name, col.column_name);
+    END LOOP;
+
+    -- Ensure all users have pre-confirmed emails so they can sign in immediately
+    UPDATE auth.users 
+    SET email_confirmed_at = COALESCE(email_confirmed_at, now()) 
+    WHERE email_confirmed_at IS NULL;
+END $$;
 
 -- ----------------------------------------------------------------------------
 -- 1. Callable RPC Function: repair_auth_users
@@ -45,21 +62,32 @@ SECURITY DEFINER
 SET search_path = public, auth, extensions
 AS $$
 DECLARE
-    v_count INT;
+    col RECORD;
+    v_count INT := 0;
 BEGIN
-    UPDATE auth.users
-    SET 
-        confirmation_token = COALESCE(confirmation_token, ''),
-        recovery_token = COALESCE(recovery_token, ''),
-        email_change_token_new = COALESCE(email_change_token_new, ''),
-        email_change = COALESCE(email_change, ''),
-        email_confirmed_at = COALESCE(email_confirmed_at, now())
-    WHERE 
-        confirmation_token IS NULL 
-        OR recovery_token IS NULL 
-        OR email_change_token_new IS NULL 
-        OR email_change IS NULL
-        OR email_confirmed_at IS NULL;
+    FOR col IN 
+        SELECT column_name 
+        FROM information_schema.columns 
+        WHERE table_schema = 'auth' 
+          AND table_name = 'users' 
+          AND data_type IN ('text', 'character varying')
+          AND column_name IN (
+            'confirmation_token', 
+            'recovery_token', 
+            'email_change_token_new', 
+            'email_change', 
+            'email_change_token_current', 
+            'phone_change', 
+            'phone_change_token', 
+            'reauthentication_token'
+          )
+    LOOP
+        EXECUTE format('UPDATE auth.users SET %I = COALESCE(%I, '''') WHERE %I IS NULL;', col.column_name, col.column_name, col.column_name);
+    END LOOP;
+
+    UPDATE auth.users 
+    SET email_confirmed_at = COALESCE(email_confirmed_at, now()) 
+    WHERE email_confirmed_at IS NULL;
 
     GET DIAGNOSTICS v_count = ROW_COUNT;
     RETURN 'Repaired ' || v_count || ' user(s) in auth.users';
@@ -437,6 +465,93 @@ BEGIN
 END;
 $$;
 
+-- ----------------------------------------------------------------------------
+-- 6. Immediate Auto-Sync for Existing Teachers
+-- Syncs all existing teachers in public.users with temporary passwords into auth.users
+-- (such as rudra@gmail.com) so they can log in immediately with zero errors!
+-- ----------------------------------------------------------------------------
+DO $$
+DECLARE
+    t RECORD;
+    v_enc TEXT;
+    v_uid UUID;
+BEGIN
+    FOR t IN 
+        SELECT id, email, name, temporary_password, institution, academic_year 
+        FROM public.users 
+        WHERE role = 'teacher' AND temporary_password IS NOT NULL AND TRIM(temporary_password) <> ''
+    LOOP
+        v_enc := extensions.crypt(TRIM(t.temporary_password), extensions.gen_salt('bf', 10));
+        
+        -- Check if user exists in auth.users
+        SELECT id INTO v_uid FROM auth.users WHERE LOWER(email) = LOWER(TRIM(t.email));
+
+        IF v_uid IS NULL THEN
+            v_uid := t.id;
+            INSERT INTO auth.users (
+                instance_id,
+                id,
+                aud,
+                role,
+                email,
+                encrypted_password,
+                email_confirmed_at,
+                recovery_sent_at,
+                last_sign_in_at,
+                raw_app_meta_data,
+                raw_user_meta_data,
+                created_at,
+                updated_at,
+                confirmation_token,
+                recovery_token,
+                email_change_token_new,
+                email_change
+            ) VALUES (
+                '00000000-0000-0000-0000-000000000000',
+                v_uid,
+                'authenticated',
+                'authenticated',
+                LOWER(TRIM(t.email)),
+                v_enc,
+                now(),
+                now(),
+                now(),
+                '{"provider":"email","providers":["email"]}'::jsonb,
+                json_build_object('role', 'teacher', 'name', t.name)::jsonb,
+                now(),
+                now(),
+                '',
+                '',
+                '',
+                ''
+            );
+        ELSE
+            UPDATE auth.users SET
+                encrypted_password = v_enc,
+                email_confirmed_at = COALESCE(email_confirmed_at, now()),
+                confirmation_token = COALESCE(confirmation_token, ''),
+                recovery_token = COALESCE(recovery_token, ''),
+                email_change_token_new = COALESCE(email_change_token_new, ''),
+                email_change = COALESCE(email_change, ''),
+                updated_at = now()
+            WHERE id = v_uid;
+        END IF;
+
+        -- Ensure identity exists in auth.identities
+        IF NOT EXISTS (SELECT 1 FROM auth.identities WHERE user_id = v_uid) THEN
+            BEGIN
+                INSERT INTO auth.identities (
+                    id, user_id, identity_data, provider, provider_id, last_sign_in_at, created_at, updated_at
+                ) VALUES (
+                    v_uid::text, v_uid, json_build_object('sub', v_uid::text, 'email', LOWER(TRIM(t.email)))::jsonb, 'email', LOWER(TRIM(t.email)), now(), now(), now()
+                );
+            EXCEPTION WHEN OTHERS THEN
+                NULL;
+            END;
+        END IF;
+    END LOOP;
+END $$;
+
 -- Grant execution permissions
 GRANT EXECUTE ON FUNCTION public.repair_auth_users() TO authenticated, anon;
 GRANT EXECUTE ON FUNCTION public.admin_create_teacher(TEXT, TEXT, TEXT, TEXT, TEXT) TO authenticated, anon;
@@ -446,3 +561,4 @@ GRANT EXECUTE ON FUNCTION public.admin_set_user_password(UUID, TEXT, TEXT, BOOLE
 
 -- Output verification status
 SELECT 'MCQ Pro: Auth and Teacher Password Schema successfully repaired and updated!' AS status;
+

@@ -179,20 +179,51 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> {
       if (assignments.isNotEmpty) {
         underTeacher = allStudents.where((s) {
           final sStd = (s.studentClass ?? '').trim();
-          final sDiv = (s.division ?? '').trim().toUpperCase();
+          var sDiv = (s.division ?? '').trim().toUpperCase();
+          if (sDiv.startsWith('DIV ')) sDiv = sDiv.substring(4).trim();
           final sInst = (s.institution ?? 'Sharda Mandir').trim().toLowerCase();
           final sMed = (s.medium ?? 'English').trim().toLowerCase();
+          final isSAcc = sInst.contains('acc');
 
           return assignments.any((a) {
             final aStd = a.standard.trim();
-            final aDiv = a.division.trim().toUpperCase();
+            var aDiv = a.division.trim().toUpperCase();
+            if (aDiv.startsWith('DIV ')) aDiv = aDiv.substring(4).trim();
             final aInst = a.institution.trim().toLowerCase();
             final aMed = a.medium.trim().toLowerCase();
+            final isAAcc = aInst.contains('acc');
 
+            // 1. Institution check
+            if (isAAcc != isSAcc) return false;
+            if (!isAAcc && aInst.isNotEmpty && sInst.isNotEmpty && aInst != sInst) return false;
+
+            // 2. Standard check
             if (aStd != sStd) return false;
-            if (aDiv != 'ALL' && aDiv != sDiv) return false;
-            if (aInst.isNotEmpty && sInst.isNotEmpty && aInst != sInst) return false;
-            if (aMed != 'both' && aMed != 'all' && aMed != sMed) return false;
+
+            // 3. Division check (Tuition ACC students belong to ACC; Sharda Mandir matches division)
+            if (isAAcc && isSAcc) {
+              // Both Tuition ACC - matches
+            } else if (aDiv != 'ALL' && aDiv != sDiv) {
+              return false;
+            }
+
+            // 4. Medium check
+            if (aMed.isNotEmpty && sMed.isNotEmpty && aMed != 'both' && aMed != 'all' && aMed != sMed) {
+              return false;
+            }
+
+            // 5. Subject & Group compatibility check
+            final sub = a.subject.trim().toLowerCase();
+            final grp = (s.studentGroup ?? '').trim().toLowerCase();
+            final isPhysics = sub == 'physics' || sub == 'physical';
+            final isChemistry = sub == 'chemistry';
+            final isBiology = sub == 'biology' || sub == 'bio';
+            final isMath = sub == 'math' || sub == 'maths' || sub == 'mathematics';
+
+            if (isPhysics || isChemistry) return true;
+            if (isBiology) return grp.isEmpty || grp == 'biology' || grp == 'bio' || grp == 'b' || grp == 'science';
+            if (isMath) return grp == 'math' || grp == 'maths' || grp == 'a';
+
             return true;
           });
         }).length;

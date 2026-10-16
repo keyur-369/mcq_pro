@@ -41,12 +41,30 @@ class _SignupScreenState extends State<SignupScreen> {
     super.dispose();
   }
 
-  List<String> _getDivisionsForClass(String std) {
-    if (std == '12') {
-      return ['A', 'B', 'C'];
-    } else {
-      return ['A', 'B', 'AB', 'Science'];
+  List<Map<String, String>> get _divisionOptions {
+    if (_selectedInstitution.trim().toLowerCase().contains('acc')) {
+      return const [
+        {'val': 'ACC', 'label': 'ACC'},
+      ];
     }
+    return const [
+      {'val': 'A', 'label': 'Div A'},
+      {'val': 'B', 'label': 'Div B'},
+      {'val': 'C', 'label': 'Div C'},
+    ];
+  }
+
+  void _onInstitutionChanged(String newInst) {
+    setState(() {
+      _selectedInstitution = newInst;
+      if (newInst.trim().toLowerCase().contains('acc')) {
+        _selectedDivision = 'ACC';
+      } else {
+        if (!['A', 'B', 'C'].contains(_selectedDivision)) {
+          _selectedDivision = 'A';
+        }
+      }
+    });
   }
 
   Future<void> _signup() async {
@@ -79,7 +97,7 @@ class _SignupScreenState extends State<SignupScreen> {
         password: password,
         name: name,
         studentClass: _selectedClass,
-        division: _selectedDivision,
+        division: _selectedInstitution.toLowerCase().contains('acc') ? 'ACC' : _selectedDivision,
         medium: _selectedMedium,
         studentGroup: _selectedGroup,
         institution: _selectedInstitution,
@@ -251,9 +269,9 @@ class _SignupScreenState extends State<SignupScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final availableDivisions = _getDivisionsForClass(_selectedClass);
-    if (!availableDivisions.contains(_selectedDivision)) {
-      _selectedDivision = availableDivisions.first;
+    final divOptions = _divisionOptions;
+    if (!divOptions.any((d) => d['val'] == _selectedDivision)) {
+      _selectedDivision = divOptions.first['val']!;
     }
 
     return Scaffold(
@@ -394,10 +412,56 @@ class _SignupScreenState extends State<SignupScreen> {
                           ),
                           const SizedBox(height: 16),
 
-                          // Class & Division Row
+                          // Row 1: Institution & Standard
                           Row(
                             children: [
                               Expanded(
+                                flex: 3,
+                                child: DropdownButtonFormField<String>(
+                                  isExpanded: true,
+                                  value: _selectedInstitution,
+                                  dropdownColor: AppColors.surface,
+                                  iconEnabledColor: AppColors.primary,
+                                  style: const TextStyle(
+                                    color: AppColors.textPrimary,
+                                    fontSize: 13.5,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                  decoration: const InputDecoration(
+                                    labelText: 'Institution',
+                                    labelStyle: TextStyle(color: AppColors.textSecondary, fontSize: 13),
+                                    contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+                                    prefixIconConstraints: BoxConstraints(minWidth: 36, minHeight: 24),
+                                    prefixIcon: Padding(
+                                      padding: EdgeInsets.only(left: 8, right: 6),
+                                      child: Icon(Icons.account_balance_outlined, size: 18, color: AppColors.primary),
+                                    ),
+                                  ),
+                                  items: ['Sharda Mandir', 'Tuition ACC']
+                                      .map((e) => DropdownMenuItem(
+                                            value: e,
+                                            child: Text(
+                                              e,
+                                              style: const TextStyle(
+                                                color: AppColors.textPrimary,
+                                                fontSize: 13.5,
+                                                fontWeight: FontWeight.w500,
+                                              ),
+                                              overflow: TextOverflow.ellipsis,
+                                              maxLines: 1,
+                                            ),
+                                          ))
+                                      .toList(),
+                                  onChanged: (val) {
+                                    if (val != null) {
+                                      _onInstitutionChanged(val);
+                                    }
+                                  },
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                flex: 2,
                                 child: DropdownButtonFormField<String>(
                                   isExpanded: true,
                                   value: _selectedClass,
@@ -433,15 +497,16 @@ class _SignupScreenState extends State<SignupScreen> {
                                             ),
                                           ))
                                       .toList(),
-                                  onChanged: (val) {
-                                    setState(() {
-                                      _selectedClass = val!;
-                                      _selectedDivision = _getDivisionsForClass(val).first;
-                                    });
-                                  },
+                                  onChanged: (val) => setState(() => _selectedClass = val!),
                                 ),
                               ),
-                              const SizedBox(width: 10),
+                            ],
+                          ),
+                          const SizedBox(height: 14),
+
+                          // Row 2: Division & Medium
+                          Row(
+                            children: [
                               Expanded(
                                 child: DropdownButtonFormField<String>(
                                   isExpanded: true,
@@ -463,11 +528,11 @@ class _SignupScreenState extends State<SignupScreen> {
                                       child: Icon(Icons.groups_outlined, size: 18, color: AppColors.primary),
                                     ),
                                   ),
-                                  items: availableDivisions
+                                  items: divOptions
                                       .map((e) => DropdownMenuItem(
-                                            value: e,
+                                            value: e['val'],
                                             child: Text(
-                                              'Div $e',
+                                              e['label']!,
                                               style: const TextStyle(
                                                 color: AppColors.textPrimary,
                                                 fontSize: 13.5,
@@ -481,13 +546,7 @@ class _SignupScreenState extends State<SignupScreen> {
                                   onChanged: (val) => setState(() => _selectedDivision = val!),
                                 ),
                               ),
-                            ],
-                          ),
-                          const SizedBox(height: 14),
-
-                          // Medium & Subject Group Row
-                          Row(
-                            children: [
+                              const SizedBox(width: 10),
                               Expanded(
                                 child: DropdownButtonFormField<String>(
                                   isExpanded: true,
@@ -527,88 +586,12 @@ class _SignupScreenState extends State<SignupScreen> {
                                   onChanged: (val) => setState(() => _selectedMedium = val!),
                                 ),
                               ),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: DropdownButtonFormField<String>(
-                                  isExpanded: true,
-                                  value: _selectedGroup,
-                                  dropdownColor: AppColors.surface,
-                                  iconEnabledColor: AppColors.primary,
-                                  style: const TextStyle(
-                                    color: AppColors.textPrimary,
-                                    fontSize: 13.5,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                  decoration: const InputDecoration(
-                                    labelText: 'Group',
-                                    labelStyle: TextStyle(color: AppColors.textSecondary, fontSize: 13),
-                                    contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
-                                    prefixIconConstraints: BoxConstraints(minWidth: 36, minHeight: 24),
-                                    prefixIcon: Padding(
-                                      padding: EdgeInsets.only(left: 8, right: 6),
-                                      child: Icon(Icons.science_outlined, size: 18, color: AppColors.primary),
-                                    ),
-                                  ),
-                                  items: ['Biology', 'Maths']
-                                      .map((e) => DropdownMenuItem(
-                                            value: e,
-                                            child: Text(
-                                              e,
-                                              style: const TextStyle(
-                                                color: AppColors.textPrimary,
-                                                fontSize: 13.5,
-                                                fontWeight: FontWeight.w500,
-                                              ),
-                                              overflow: TextOverflow.ellipsis,
-                                              maxLines: 1,
-                                            ),
-                                          ))
-                                      .toList(),
-                                  onChanged: (val) => setState(() => _selectedGroup = val!),
-                                ),
-                              ),
                             ],
                           ),
-                          const SizedBox(height: 14),
+                          const SizedBox(height: 16),
 
-                          // Institution
-                          DropdownButtonFormField<String>(
-                            isExpanded: true,
-                            value: _selectedInstitution,
-                            dropdownColor: AppColors.surface,
-                            iconEnabledColor: AppColors.primary,
-                            style: const TextStyle(
-                              color: AppColors.textPrimary,
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
-                            ),
-                            decoration: const InputDecoration(
-                              labelText: 'Institution',
-                              labelStyle: TextStyle(color: AppColors.textSecondary),
-                              contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                              prefixIconConstraints: BoxConstraints(minWidth: 40, minHeight: 24),
-                              prefixIcon: Padding(
-                                padding: EdgeInsets.only(left: 10, right: 8),
-                                child: Icon(Icons.account_balance_outlined, size: 20, color: AppColors.primary),
-                              ),
-                            ),
-                            items: ['Sharda Mandir', 'Tuition ACC']
-                                .map((e) => DropdownMenuItem(
-                                      value: e,
-                                      child: Text(
-                                        e,
-                                        style: const TextStyle(
-                                          color: AppColors.textPrimary,
-                                          fontSize: 14,
-                                          fontWeight: FontWeight.w500,
-                                        ),
-                                        overflow: TextOverflow.ellipsis,
-                                        maxLines: 1,
-                                      ),
-                                    ))
-                                .toList(),
-                            onChanged: (val) => setState(() => _selectedInstitution = val!),
-                          ),
+                          // Subjects & Stream Selection with Default & Elective Chips
+                          _buildSubjectsSelectionCard(),
                           const SizedBox(height: 16),
 
                           Container(
@@ -677,6 +660,260 @@ class _SignupScreenState extends State<SignupScreen> {
                 ),
               ),
             ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSubjectsSelectionCard() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: AppColors.primarySoft,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(
+                  Icons.menu_book_rounded,
+                  size: 16,
+                  color: AppColors.primary,
+                ),
+              ),
+              const SizedBox(width: 8),
+              const Expanded(
+                child: Text(
+                  'Subjects & Stream Selection',
+                  style: TextStyle(
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+
+          // 1. Default compulsory subjects (Physics & Chemistry)
+          const Text(
+            'Default Subjects (Compulsory):',
+            style: TextStyle(
+              fontSize: 11.5,
+              fontWeight: FontWeight.w600,
+              color: AppColors.textSecondary,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Wrap(
+            spacing: 8,
+            runSpacing: 6,
+            children: [
+              _buildDefaultSubjectChip('Physics', Icons.bolt_rounded),
+              _buildDefaultSubjectChip('Chemistry', Icons.science_rounded),
+            ],
+          ),
+
+          const SizedBox(height: 12),
+          const Divider(height: 1, color: AppColors.border),
+          const SizedBox(height: 10),
+
+          // 2. Selectable Elective Chips (Biology or Math) - Only 1 can be selected
+          const Text(
+            'Select Elective Subject / Group (Pick One):',
+            style: TextStyle(
+              fontSize: 11.5,
+              fontWeight: FontWeight.w600,
+              color: AppColors.textSecondary,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: _buildElectiveChip(
+                  label: 'Biology',
+                  icon: Icons.biotech_rounded,
+                  isSelected: _selectedGroup == 'Biology',
+                  onSelected: () {
+                    setState(() => _selectedGroup = 'Biology');
+                  },
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _buildElectiveChip(
+                  label: 'Math',
+                  icon: Icons.calculate_rounded,
+                  isSelected: _selectedGroup == 'Math',
+                  onSelected: () {
+                    setState(() => _selectedGroup = 'Math');
+                  },
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 12),
+          // Dynamic summary indicator
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+            decoration: BoxDecoration(
+              color: AppColors.primarySoft,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: AppColors.primary.withOpacity(0.2)),
+            ),
+            child: Row(
+              children: [
+                const Icon(
+                  Icons.check_circle_rounded,
+                  size: 15,
+                  color: AppColors.primary,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: RichText(
+                    text: TextSpan(
+                      style: const TextStyle(
+                        fontSize: 11.5,
+                        color: AppColors.textPrimary,
+                      ),
+                      children: [
+                        const TextSpan(
+                          text: 'Enrolled: ',
+                          style: TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                        TextSpan(
+                          text: 'Physics, Chemistry, $_selectedGroup',
+                          style: const TextStyle(
+                            color: AppColors.primary,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDefaultSubjectChip(String label, IconData icon) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: AppColors.cardLight,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: AppColors.secondary),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 12.5,
+              fontWeight: FontWeight.w600,
+              color: AppColors.textPrimary,
+            ),
+          ),
+          const SizedBox(width: 6),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+            decoration: BoxDecoration(
+              color: AppColors.success.withOpacity(0.12),
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: const Text(
+              'Default',
+              style: TextStyle(
+                fontSize: 9.5,
+                fontWeight: FontWeight.bold,
+                color: AppColors.success,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildElectiveChip({
+    required String label,
+    required IconData icon,
+    required bool isSelected,
+    required VoidCallback onSelected,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onSelected,
+        borderRadius: BorderRadius.circular(10),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeInOut,
+          padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+          decoration: BoxDecoration(
+            color: isSelected ? AppColors.primary : AppColors.cardLight,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: isSelected ? AppColors.primary : AppColors.border,
+              width: isSelected ? 1.5 : 1,
+            ),
+            boxShadow: isSelected
+                ? [
+                    BoxShadow(
+                      color: AppColors.primary.withOpacity(0.3),
+                      blurRadius: 6,
+                      offset: const Offset(0, 2),
+                    )
+                  ]
+                : null,
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                icon,
+                size: 16,
+                color: isSelected ? Colors.white : AppColors.primary,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: isSelected ? Colors.white : AppColors.textPrimary,
+                ),
+              ),
+              if (isSelected) ...[
+                const SizedBox(width: 6),
+                const Icon(
+                  Icons.check_circle_rounded,
+                  size: 14,
+                  color: Colors.white,
+                ),
+              ],
+            ],
           ),
         ),
       ),
