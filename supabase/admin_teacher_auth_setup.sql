@@ -342,85 +342,11 @@ END;
 $$;
 
 -- ----------------------------------------------------------------------------
--- 4. Teacher Temporary Password Auto-Sync & Verification Function
+-- 4. Drop deprecated / insecure teacher_temp_login
+-- Password verification is strictly handled by Supabase Auth (auth.signInWithPassword)
 -- ----------------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION public.teacher_temp_login(
-    p_email TEXT,
-    p_password TEXT
-)
-RETURNS BOOLEAN
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public, auth, extensions
-AS $$
-DECLARE
-    v_user_id UUID;
-    v_encrypted_pw TEXT;
-    v_clean_email TEXT := LOWER(TRIM(p_email));
-    v_clean_pw TEXT := TRIM(p_password);
-BEGIN
-    -- Check if user exists in public.users or auth.users
-    SELECT id INTO v_user_id
-    FROM public.users
-    WHERE LOWER(email) = v_clean_email AND is_active = true;
+DROP FUNCTION IF EXISTS public.teacher_temp_login(TEXT, TEXT);
 
-    IF v_user_id IS NULL THEN
-        SELECT id INTO v_user_id FROM auth.users WHERE LOWER(email) = v_clean_email;
-        IF v_user_id IS NULL THEN
-            RETURN false;
-        END IF;
-    END IF;
-
-    -- Encrypt the verified password using bcrypt
-    v_encrypted_pw := extensions.crypt(v_clean_pw, extensions.gen_salt('bf', 10));
-
-    -- Force sync auth.users with pre-confirmed email and ensure clean string tokens
-    UPDATE auth.users SET
-        encrypted_password = v_encrypted_pw,
-        email_confirmed_at = COALESCE(email_confirmed_at, now()),
-        confirmation_token = COALESCE(confirmation_token, ''),
-        recovery_token = COALESCE(recovery_token, ''),
-        email_change_token_new = COALESCE(email_change_token_new, ''),
-        email_change = COALESCE(email_change, ''),
-        updated_at = now()
-    WHERE id = v_user_id OR LOWER(email) = v_clean_email;
-
-    -- Ensure identity exists
-    IF NOT EXISTS (SELECT 1 FROM auth.identities WHERE user_id = v_user_id) THEN
-        BEGIN
-            INSERT INTO auth.identities (
-                id,
-                user_id,
-                identity_data,
-                provider,
-                provider_id,
-                last_sign_in_at,
-                created_at,
-                updated_at
-            ) VALUES (
-                v_user_id::text,
-                v_user_id,
-                json_build_object('sub', v_user_id::text, 'email', v_clean_email)::jsonb,
-                'email',
-                v_clean_email,
-                now(),
-                now(),
-                now()
-            );
-        EXCEPTION WHEN OTHERS THEN
-            NULL;
-        END;
-    END IF;
-
-    -- Ensure public.users profile exists and has must_change_password = true
-    UPDATE public.users SET
-        must_change_password = true,
-        temporary_password = v_clean_pw
-    WHERE id = v_user_id OR LOWER(email) = v_clean_email;
-
-    RETURN true;
-END;
-$$;
 
 -- ----------------------------------------------------------------------------
 -- 5. Universal Password Vault Reset RPC for Admin
@@ -556,7 +482,6 @@ END $$;
 GRANT EXECUTE ON FUNCTION public.repair_auth_users() TO authenticated, anon;
 GRANT EXECUTE ON FUNCTION public.admin_create_teacher(TEXT, TEXT, TEXT, TEXT, TEXT) TO authenticated, anon;
 GRANT EXECUTE ON FUNCTION public.admin_reset_teacher_password(UUID, TEXT) TO authenticated, anon;
-GRANT EXECUTE ON FUNCTION public.teacher_temp_login(TEXT, TEXT) TO authenticated, anon;
 GRANT EXECUTE ON FUNCTION public.admin_set_user_password(UUID, TEXT, TEXT, BOOLEAN) TO authenticated, anon;
 
 -- Output verification status

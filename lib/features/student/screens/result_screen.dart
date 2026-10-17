@@ -6,9 +6,12 @@ import 'package:mcq_test_app/core/widgets/animated_page.dart';
 import 'package:mcq_test_app/core/widgets/app_card.dart';
 import 'package:mcq_test_app/core/widgets/app_gradient_background.dart';
 import 'package:mcq_test_app/core/widgets/app_section_title.dart';
+import 'package:mcq_test_app/models/app_user.dart';
 import 'package:mcq_test_app/models/question.dart';
 import 'package:mcq_test_app/models/test.dart';
 import 'package:mcq_test_app/features/student/screens/student_dashboard.dart';
+import 'package:mcq_test_app/features/teacher/screens/teacher_dashboard.dart';
+import 'package:mcq_test_app/features/admin/screens/admin_dashboard.dart';
 
 class ResultScreen extends StatefulWidget {
   final int score;
@@ -18,6 +21,7 @@ class ResultScreen extends StatefulWidget {
   final Test? test;
   final String? studentName;
   final String? rollNumber;
+  final bool? isTeacher;
 
   const ResultScreen({
     super.key,
@@ -28,6 +32,7 @@ class ResultScreen extends StatefulWidget {
     this.test,
     this.studentName,
     this.rollNumber,
+    this.isTeacher,
   });
 
   @override
@@ -36,6 +41,36 @@ class ResultScreen extends StatefulWidget {
 
 class _ResultScreenState extends State<ResultScreen> {
   bool _isDownloadingPdf = false;
+  bool _isTeacher = false;
+  AppUser? _currentUserProfile;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.isTeacher != null) {
+      _isTeacher = widget.isTeacher!;
+    }
+    _resolveUserRole();
+  }
+
+  Future<void> _resolveUserRole() async {
+    try {
+      final user = SupabaseService().currentUser;
+      if (user != null) {
+        final metaRole = user.userMetadata?['role']?.toString().toLowerCase().trim();
+        if (metaRole == 'teacher') {
+          if (mounted) setState(() => _isTeacher = true);
+        }
+        final profile = await SupabaseService().getUserProfile(user.id);
+        if (profile != null && mounted) {
+          setState(() {
+            _currentUserProfile = profile;
+            if (profile.isTeacher) _isTeacher = true;
+          });
+        }
+      }
+    } catch (_) {}
+  }
 
   void _downloadSolutionsPdf() async {
     setState(() => _isDownloadingPdf = true);
@@ -48,7 +83,7 @@ class _ResultScreenState extends State<ResultScreen> {
 
       if (user != null && (widget.studentName == null || widget.rollNumber == null)) {
         final profile = await supabase.getUserProfile(user.id);
-        if (profile != null) {
+        if (profile != null && profile.isStudent) {
           name = profile.name ?? profile.email;
           rollNo = profile.rollNo ?? 'N/A';
         }
@@ -101,6 +136,63 @@ class _ResultScreenState extends State<ResultScreen> {
     }
   }
 
+  Future<void> _handleBackToDashboard() async {
+    bool isTeacher = widget.isTeacher ?? _isTeacher;
+    bool isAdmin = false;
+    AppUser? profile = _currentUserProfile;
+
+    if (!isTeacher) {
+      final user = SupabaseService().currentUser;
+      if (user != null) {
+        final metaRole = user.userMetadata?['role']?.toString().toLowerCase().trim();
+        if (metaRole == 'teacher') {
+          isTeacher = true;
+        } else if (metaRole == 'admin') {
+          isAdmin = true;
+        } else {
+          try {
+            profile ??= await SupabaseService().getUserProfile(user.id);
+            if (profile != null) {
+              if (profile.isTeacher) {
+                isTeacher = true;
+              } else if (profile.isAdmin) {
+                isAdmin = true;
+              }
+            }
+          } catch (_) {}
+        }
+      }
+    }
+
+    if (!mounted) return;
+
+    if (isTeacher) {
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(
+          builder: (_) => TeacherDashboard(user: profile),
+        ),
+        (route) => false,
+      );
+    } else if (isAdmin) {
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(
+          builder: (_) => const AdminDashboard(),
+        ),
+        (route) => false,
+      );
+    } else {
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(
+          builder: (_) => StudentDashboard(user: profile),
+        ),
+        (route) => false,
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final percentage = widget.total == 0 ? 0.0 : (widget.score / widget.total) * 100;
@@ -110,6 +202,12 @@ class _ResultScreenState extends State<ResultScreen> {
       appBar: AppBar(
         title: const Text('Performance Report'),
         automaticallyImplyLeading: false,
+        leading: Navigator.canPop(context)
+            ? IconButton(
+                icon: const Icon(Icons.arrow_back_ios_new_rounded),
+                onPressed: () => Navigator.pop(context),
+              )
+            : null,
       ),
       body: AppGradientBackground(
         child: SafeArea(
@@ -156,13 +254,7 @@ class _ResultScreenState extends State<ResultScreen> {
                   width: double.infinity,
                   height: 50,
                   child: OutlinedButton.icon(
-                    onPressed: () => Navigator.pushAndRemoveUntil(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const StudentDashboard(),
-                      ),
-                      (route) => false,
-                    ),
+                    onPressed: _handleBackToDashboard,
                     icon: const Icon(Icons.home_rounded, size: 20),
                     label: const Text(
                       'Back to Dashboard',
@@ -282,7 +374,11 @@ class _ResultScreenState extends State<ResultScreen> {
                 ),
                 const SizedBox(height: 10),
                 Text(
-                  'You correctly answered ${widget.score} out of ${widget.total} questions.',
+                  (_isTeacher || widget.isTeacher == true)
+                      ? (widget.studentName != null && widget.studentName!.trim().isNotEmpty
+                          ? '${widget.studentName} answered ${widget.score} out of ${widget.total} questions correctly.'
+                          : 'Student correctly answered ${widget.score} out of ${widget.total} questions.')
+                      : 'You correctly answered ${widget.score} out of ${widget.total} questions.',
                   style: TextStyle(
                     color: Colors.white.withOpacity(0.85),
                     fontSize: 13,

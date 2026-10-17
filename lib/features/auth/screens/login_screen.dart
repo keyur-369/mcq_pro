@@ -74,12 +74,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
     }
 
     final email = _emailController.text.trim();
-    final password = _passwordController.text;
+    final password = _passwordController.text.trim();
 
     setState(() => _isLoading = true);
 
     try {
-      // 1. Authenticate with Supabase Auth
+      // 1. Authenticate with Supabase Auth (verifies both email and password)
       final response = await SupabaseService().login(email, password);
       final userId = response.user?.id;
 
@@ -158,9 +158,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
       if (mounted) {
         _shakeCtrl.forward(from: 0);
         String msg = e.toString().replaceAll('Exception:', '').trim();
-        if (msg.contains('invalid_credentials') ||
-            msg.contains('Invalid login credentials') ||
-            msg.contains('invalid-credentials')) {
+        final lowerMsg = msg.toLowerCase();
+        if (lowerMsg.contains('invalid_credentials') ||
+            lowerMsg.contains('invalid login credentials') ||
+            lowerMsg.contains('invalid-credentials') ||
+            lowerMsg.contains('invalid_grant') ||
+            lowerMsg.contains('invalid email or password')) {
           msg =
               'Invalid email or password. Please verify your credentials or check with the administrator.';
         } else if (msg.contains('Database error querying schema') ||

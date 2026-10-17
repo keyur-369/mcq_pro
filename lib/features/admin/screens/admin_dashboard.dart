@@ -10,8 +10,8 @@ import 'package:mcq_test_app/features/admin/screens/admin_create_teacher_screen.
 import 'package:mcq_test_app/features/admin/screens/admin_gemini_keys_screen.dart';
 import 'package:mcq_test_app/features/admin/screens/admin_password_vault_screen.dart';
 import 'package:mcq_test_app/features/admin/tabs/admin_analytics_tab.dart';
-import 'package:mcq_test_app/features/admin/tabs/admin_audit_tab.dart';
-import 'package:mcq_test_app/features/admin/tabs/admin_backups_tab.dart';
+// import 'package:mcq_test_app/features/admin/tabs/admin_audit_tab.dart'; // TODO: Enable in the future
+// import 'package:mcq_test_app/features/admin/tabs/admin_backups_tab.dart'; // TODO: Enable in the future
 import 'package:mcq_test_app/features/admin/tabs/admin_students_tab.dart';
 import 'package:mcq_test_app/features/admin/tabs/admin_teachers_tab.dart';
 import 'package:mcq_test_app/features/auth/screens/login_screen.dart';
@@ -50,7 +50,8 @@ class _AdminDashboardState extends State<AdminDashboard>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 5, vsync: this);
+    // _tabController = TabController(length: 5, vsync: this); // Included Audit History & Drive Backups
+    _tabController = TabController(length: 3, vsync: this);
     _tabController.addListener(() {
       // Rebuild FAB when tab changes
       if (!_tabController.indexIsChanging && mounted) {
@@ -311,11 +312,11 @@ class _AdminDashboardState extends State<AdminDashboard>
                       errorMessage: _studentsError,
                       onRefresh: _loadDashboardData,
                     ),
-                    AdminBackupsTab(
-                      backups: _backups,
-                      onRefresh: _loadDashboardData,
-                    ),
-                    const AdminAuditTab(),
+                    // AdminBackupsTab(
+                    //   backups: _backups,
+                    //   onRefresh: _loadDashboardData,
+                    // ), // TODO: Enable in the future
+                    // const AdminAuditTab(), // TODO: Enable in the future when audit logging is implemented
                   ],
                 ),
               ),
@@ -413,8 +414,8 @@ class _AdminDashboardState extends State<AdminDashboard>
             _PillTab(icon: Icons.analytics_rounded, label: 'Analytics'),
             _PillTab(icon: Icons.people_alt_rounded, label: 'Teachers'),
             _PillTab(icon: Icons.school_rounded, label: 'Students'),
-            _PillTab(icon: Icons.cloud_sync_rounded, label: 'Drive Backups'),
-            _PillTab(icon: Icons.history_edu_rounded, label: 'Audit History'),
+            // _PillTab(icon: Icons.cloud_sync_rounded, label: 'Drive Backups'), // TODO: Enable in the future
+            // _PillTab(icon: Icons.history_edu_rounded, label: 'Audit History'), // TODO: Enable in the future
           ],
         ),
       ),

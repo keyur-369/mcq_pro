@@ -2041,6 +2041,8 @@ class _TeacherStudentsScreenState extends State<TeacherStudentsScreen> {
                                                 att['test_id'],
                                                 score,
                                                 test: test,
+                                                studentName: displayName,
+                                                rollNumber: student.rollNo,
                                               );
                                             },
                                             child: const Row(
@@ -2195,6 +2197,8 @@ class _TeacherStudentsScreenState extends State<TeacherStudentsScreen> {
       String testId,
       int score, {
         Test? test,
+        String? studentName,
+        String? rollNumber,
       }) async {
     showDialog(
       context: context,
@@ -2227,6 +2231,9 @@ class _TeacherStudentsScreenState extends State<TeacherStudentsScreen> {
             questions: questions,
             selectedAnswers: selectedAnswers,
             test: test,
+            studentName: studentName,
+            rollNumber: rollNumber,
+            isTeacher: true,
           ),
         ),
       );

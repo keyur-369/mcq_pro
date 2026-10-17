@@ -105,9 +105,9 @@ class _TeacherResultsScreenState extends State<TeacherResultsScreen> {
 
                   return AnimatedPage(
                     child: ListView.separated(
-                      padding: const EdgeInsets.all(24),
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
                       itemCount: attempts.length,
-                      separatorBuilder: (_, __) => const SizedBox(height: 16),
+                      separatorBuilder: (_, __) => const SizedBox(height: 12),
                       itemBuilder: (context, index) {
                         return _buildAttemptCard(attempts[index]);
                       },
@@ -124,7 +124,7 @@ class _TeacherResultsScreenState extends State<TeacherResultsScreen> {
 
   Widget _buildFilters() {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 24),
+      padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Column(
         children: [
           TextField(
@@ -259,69 +259,86 @@ class _TeacherResultsScreenState extends State<TeacherResultsScreen> {
     final testModel = testData is Map<String, dynamic> ? Test.fromMap(testData) : null;
 
     return AppCard(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Container(
-            padding: const EdgeInsets.all(12),
+            padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
               color: score < 5 ? AppColors.error.withOpacity(0.1) : AppColors.primarySoft,
-              borderRadius: BorderRadius.circular(14),
+              borderRadius: BorderRadius.circular(12),
             ),
             child: Icon(
               Icons.person_rounded,
               color: score < 5 ? AppColors.error : AppColors.primary,
-              size: 24,
+              size: 22,
             ),
           ),
-          const SizedBox(width: 16),
+          const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
               children: [
                 Row(
                   children: [
-                    Text(
-                      studentDisplayName,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16,
-                        color: AppColors.textPrimary,
+                    Flexible(
+                      child: Text(
+                        studentDisplayName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 15,
+                          color: AppColors.textPrimary,
+                        ),
                       ),
                     ),
-                    if (rollNo != null) ...[
-                      const SizedBox(width: 8),
+                    if (rollNo != null && rollNo.isNotEmpty) ...[
+                      const SizedBox(width: 6),
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                         decoration: BoxDecoration(
-                          color: AppColors.border,
+                          color: AppColors.border.withOpacity(0.6),
                           borderRadius: BorderRadius.circular(4),
                         ),
                         child: Text(
                           'Roll #$rollNo',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                           style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold),
                         ),
                       ),
                     ],
                   ],
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: 3),
                 Text(
                   '$subject: $topic',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     color: AppColors.textSecondary,
-                    fontSize: 13,
+                    fontSize: 12.5,
                   ),
                 ),
-                if (submittedAt != null)
+                if (submittedAt != null) ...[
+                  const SizedBox(height: 2),
                   Text(
                     DateFormat.yMMMd().format(submittedAt.toLocal()),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: const TextStyle(color: AppColors.textMuted, fontSize: 11),
                   ),
+                ],
               ],
             ),
           ),
+          const SizedBox(width: 8),
           Column(
             crossAxisAlignment: CrossAxisAlignment.end,
+            mainAxisSize: MainAxisSize.min,
             children: [
               Text(
                 '$score pts',
@@ -330,19 +347,28 @@ class _TeacherResultsScreenState extends State<TeacherResultsScreen> {
                       ? AppColors.success
                       : (score >= 5 ? AppColors.primary : AppColors.error),
                   fontWeight: FontWeight.w900,
-                  fontSize: 18,
+                  fontSize: 16,
                 ),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 6),
               SizedBox(
                 height: 32,
                 child: ElevatedButton(
-                  onPressed: () => _openResultPreview(context, attemptId, testId, score, test: testModel),
+                  onPressed: () => _openResultPreview(
+                    context,
+                    attemptId,
+                    testId,
+                    score,
+                    test: testModel,
+                    studentName: studentDisplayName,
+                    rollNumber: rollNo,
+                  ),
                   style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
                     minimumSize: const Size(0, 32),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                     textStyle: const TextStyle(
-                      fontSize: 12,
+                      fontSize: 11.5,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
@@ -362,6 +388,8 @@ class _TeacherResultsScreenState extends State<TeacherResultsScreen> {
     String testId,
     int score, {
     Test? test,
+    String? studentName,
+    String? rollNumber,
   }) async {
     showDialog(
       context: context,
@@ -385,6 +413,9 @@ class _TeacherResultsScreenState extends State<TeacherResultsScreen> {
               questions: questions,
               selectedAnswers: selectedAnswers,
               test: test,
+              studentName: studentName,
+              rollNumber: rollNumber,
+              isTeacher: true,
             ),
           ),
         );

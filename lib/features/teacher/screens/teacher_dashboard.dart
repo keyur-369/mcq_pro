@@ -8,15 +8,19 @@ import 'package:mcq_test_app/core/services/supabase_service.dart';
 import 'package:mcq_test_app/core/widgets/animated_page.dart';
 import 'package:mcq_test_app/core/widgets/app_gradient_background.dart';
 import 'package:mcq_test_app/features/auth/screens/login_screen.dart';
+import 'package:mcq_test_app/features/chat/screens/chat_screen.dart';
 import 'package:mcq_test_app/features/teacher/screens/create_test_screen.dart';
+import 'package:mcq_test_app/features/teacher/screens/teacher_messages_screen.dart';
 import 'package:mcq_test_app/features/teacher/screens/teacher_profile_screen.dart';
 import 'package:mcq_test_app/features/teacher/screens/teacher_results_screen.dart';
 import 'package:mcq_test_app/features/teacher/screens/teacher_students_screen.dart';
 import 'package:mcq_test_app/features/teacher/screens/teacher_tests_screen.dart';
 import 'package:mcq_test_app/models/api_key.dart';
 import 'package:mcq_test_app/models/app_user.dart';
+import 'package:mcq_test_app/models/chat_conversation.dart';
 import 'package:mcq_test_app/models/teacher_assignment.dart';
 import 'package:mcq_test_app/models/test_backup.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// ---------------------------------------------------------------------------
 /// Liquid glass primitive
@@ -173,8 +177,12 @@ class TeacherDashboard extends ConsumerStatefulWidget {
 class _TeacherDashboardState extends ConsumerState<TeacherDashboard> {
   List<TeacherAssignment> _assignments = [];
   List<TestBackup> _backups = [];
+  List<ChatConversation> _conversations = [];
   bool _isLoadingScope = true;
+  bool _isLoadingConversations = true;
+  int _unreadCount = 0;
   String _teacherName = 'Teacher';
+  RealtimeChannel? _realtimeSubscription;
 
   @override
   void initState() {
@@ -189,6 +197,30 @@ class _TeacherDashboardState extends ConsumerState<TeacherDashboard> {
           'Teacher';
     }
     _loadTeacherData();
+    _setupRealtime();
+  }
+
+  @override
+  void dispose() {
+    _realtimeSubscription?.unsubscribe();
+    super.dispose();
+  }
+
+  void _setupRealtime() {
+    _realtimeSubscription?.unsubscribe();
+    _realtimeSubscription = SupabaseService().subscribeToUserConversations(
+      onUpdate: () {
+        if (!mounted) return;
+        SupabaseService().getUserConversations().then((list) {
+          if (mounted) {
+            setState(() {
+              _conversations = list;
+              _unreadCount = list.fold(0, (sum, c) => sum + c.unreadCount);
+            });
+          }
+        }).catchError((_) {});
+      },
+    );
   }
 
   Future<void> _loadTeacherData() async {
@@ -200,6 +232,8 @@ class _TeacherDashboardState extends ConsumerState<TeacherDashboard> {
           user.id,
         );
         final backups = await SupabaseService().getTestBackups();
+        final convs = await SupabaseService().getUserConversations();
+
         if (mounted) {
           setState(() {
             if (profile?.name != null && profile!.name!.trim().isNotEmpty) {
@@ -207,14 +241,27 @@ class _TeacherDashboardState extends ConsumerState<TeacherDashboard> {
             }
             _assignments = assignments;
             _backups = backups;
+            _conversations = convs;
+            _unreadCount = convs.fold(0, (sum, c) => sum + c.unreadCount);
             _isLoadingScope = false;
+            _isLoadingConversations = false;
           });
         }
       } catch (_) {
-        if (mounted) setState(() => _isLoadingScope = false);
+        if (mounted) {
+          setState(() {
+            _isLoadingScope = false;
+            _isLoadingConversations = false;
+          });
+        }
       }
     } else {
-      if (mounted) setState(() => _isLoadingScope = false);
+      if (mounted) {
+        setState(() {
+          _isLoadingScope = false;
+          _isLoadingConversations = false;
+        });
+      }
     }
   }
 
@@ -231,6 +278,13 @@ class _TeacherDashboardState extends ConsumerState<TeacherDashboard> {
   // ---------------------------------------------------------------------------
   // Navigation helpers
   // ---------------------------------------------------------------------------
+  void _openMessages() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const TeacherMessagesScreen()),
+    ).then((_) => _loadTeacherData());
+  }
+
   void _openProfile() {
     Navigator.push(
       context,
@@ -358,6 +412,17 @@ class _TeacherDashboardState extends ConsumerState<TeacherDashboard> {
                             const SizedBox(height: 12),
                             _buildQuickActions(),
                             const SizedBox(height: 18),
+                            _buildSectionHeaderWithAction(
+                              title: 'Student Messages',
+                              subtitle: _unreadCount > 0
+                                  ? '$_unreadCount unread student message${_unreadCount > 1 ? "s" : ""}'
+                                  : 'Private student questions & inquiries',
+                              actionText: 'View All',
+                              onAction: _openMessages,
+                            ),
+                            const SizedBox(height: 10),
+                            _buildStudentMessagesSection(),
+                            const SizedBox(height: 18),
                             _buildSectionHeader(
                               title: 'Cloud Backup',
                               subtitle: 'Google Drive archive of your tests',
@@ -479,6 +544,8 @@ class _TeacherDashboardState extends ConsumerState<TeacherDashboard> {
                 ],
               ),
             ),
+            _headerChatButton(),
+            const SizedBox(width: 6),
             _headerIconButton(
               icon: Icons.person_rounded,
               tooltip: 'Faculty Profile',
@@ -492,6 +559,45 @@ class _TeacherDashboardState extends ConsumerState<TeacherDashboard> {
               color: AppColors.textPrimary,
               onTap: _logout,
             ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _headerChatButton() {
+    return Tooltip(
+      message: 'Student Messages',
+      child: GlassCard(
+        radius: 12,
+        blur: 12,
+        padding: const EdgeInsets.all(7),
+        onTap: _openMessages,
+        child: Stack(
+          clipBehavior: Clip.none,
+          alignment: Alignment.center,
+          children: [
+            const Icon(Icons.chat_bubble_rounded, size: 18, color: AppColors.primary),
+            if (_unreadCount > 0)
+              Positioned(
+                top: -4,
+                right: -4,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1.5),
+                  decoration: const BoxDecoration(
+                    color: AppColors.secondary,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Text(
+                    _unreadCount > 9 ? '9+' : '$_unreadCount',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 8,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+              ),
           ],
         ),
       ),
@@ -846,6 +952,268 @@ class _TeacherDashboardState extends ConsumerState<TeacherDashboard> {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildSectionHeaderWithAction({
+    required String title,
+    required String subtitle,
+    required String actionText,
+    required VoidCallback onAction,
+  }) {
+    return Row(
+      children: [
+        Container(
+          width: 4,
+          height: 18,
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [AppColors.primary, AppColors.primaryLight],
+            ),
+            borderRadius: BorderRadius.circular(8),
+            boxShadow: [
+              BoxShadow(
+                color: AppColors.primary.withOpacity(0.30),
+                blurRadius: 6,
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 15.5,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: -0.2,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 1),
+              Text(
+                subtitle,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w500,
+                  color: AppColors.textSecondary,
+                ),
+              ),
+            ],
+          ),
+        ),
+        TextButton(
+          onPressed: onAction,
+          style: TextButton.styleFrom(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            minimumSize: Size.zero,
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          ),
+          child: Text(
+            actionText,
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: AppColors.primary,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildStudentMessagesSection() {
+    if (_isLoadingConversations) {
+      return const GlassCard(
+        radius: 18,
+        padding: EdgeInsets.all(20),
+        child: Center(
+          child: CircularProgressIndicator(color: AppColors.primary),
+        ),
+      );
+    }
+
+    if (_conversations.isEmpty) {
+      return GlassCard(
+        radius: 18,
+        padding: const EdgeInsets.all(18),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: AppColors.primary.withOpacity(0.12),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.chat_bubble_outline_rounded, color: AppColors.primary, size: 22),
+            ),
+            const SizedBox(width: 14),
+            const Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'No student messages yet',
+                    style: TextStyle(
+                      fontSize: 14.5,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                  SizedBox(height: 2),
+                  Text(
+                    'Conversations with your authorized students will appear here.',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            TextButton(
+              onPressed: _openMessages,
+              child: const Text('Open'),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Column(
+      children: [
+        for (int i = 0; i < _conversations.take(3).length; i++) ...[
+          if (i > 0) const SizedBox(height: 8),
+          _buildConversationTile(_conversations[i]),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildConversationTile(ChatConversation conv) {
+    final hasUnread = conv.hasUnread;
+    final currentUserId = SupabaseService().currentUser?.id ?? '';
+
+    return GlassCard(
+      radius: 16,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => ChatScreen(
+              conversationId: conv.id,
+              teacherId: currentUserId,
+              studentId: conv.studentId,
+              otherUserName: conv.otherUserName,
+              otherUserRole: 'student',
+              otherUserSubtitle: conv.displaySubtitle,
+              otherUserEmail: conv.otherUserEmail,
+            ),
+          ),
+        ).then((_) => _loadTeacherData());
+      },
+      child: Row(
+        children: [
+          CircleAvatar(
+            radius: 20,
+            backgroundColor: AppColors.primarySoft,
+            child: Text(
+              conv.initials,
+              style: const TextStyle(
+                color: AppColors.primary,
+                fontWeight: FontWeight.w800,
+                fontSize: 14,
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        conv.otherUserName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 14.5,
+                          fontWeight: hasUnread ? FontWeight.w900 : FontWeight.w700,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                    ),
+                    if (conv.lastMessageAt != null)
+                      Text(
+                        conv.formattedLastMessageTime,
+                        style: TextStyle(
+                          fontSize: 10.5,
+                          fontWeight: hasUnread ? FontWeight.w700 : FontWeight.w500,
+                          color: hasUnread ? AppColors.primary : AppColors.textMuted,
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  conv.displaySubtitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w500,
+                    color: AppColors.primaryDark,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        conv.lastMessageText ?? 'Tap to chat with student',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          color: hasUnread ? AppColors.textPrimary : AppColors.textSecondary,
+                          fontWeight: hasUnread ? FontWeight.w700 : FontWeight.w400,
+                        ),
+                      ),
+                    ),
+                    if (hasUnread)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: AppColors.primary,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(
+                          '${conv.unreadCount}',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:mcq_test_app/core/constants/app_colors.dart';
 import 'package:mcq_test_app/core/services/supabase_service.dart';
+import 'package:mcq_test_app/features/admin/screens/admin_student_details_screen.dart';
 import 'package:mcq_test_app/features/admin/widgets/student_card.dart';
 import 'package:mcq_test_app/models/app_user.dart';
 
@@ -80,6 +81,53 @@ class _AdminStudentsTabState extends State<AdminStudentsTab>
       _filterClass = 'all';
       _filterMedium = 'all';
     });
+  }
+
+  bool _isFixingRolls = false;
+
+  bool get _hasDuplicateRollNumbers {
+    final seen = <String>{};
+    for (final s in widget.students) {
+      final r = s.rollNo?.trim() ?? '';
+      if (r.isNotEmpty && seen.contains(r)) {
+        return true;
+      }
+      if (r.isNotEmpty) seen.add(r);
+    }
+    return false;
+  }
+
+  Future<void> _handleFixDuplicateRolls() async {
+    setState(() => _isFixingRolls = true);
+    try {
+      final fixed = await _supabase.repairDuplicateStudentRollNumbers();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              fixed > 0
+                  ? 'Successfully renumbered $fixed students with unique roll numbers!'
+                  : 'All roll numbers verified and updated.',
+            ),
+            backgroundColor: AppColors.success,
+          ),
+        );
+      }
+      widget.onRefresh();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to renumber students: $e'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isFixingRolls = false);
+      }
+    }
   }
 
   Future<void> _toggleStudentStatus(AppUser student, bool newStatus) async {
@@ -205,218 +253,25 @@ class _AdminStudentsTabState extends State<AdminStudentsTab>
     );
   }
 
-  // ───────────────────────── Details sheet ─────────────────────────
+  // ───────────────────────── Student Details Screen ─────────────────────────
 
   void _showStudentDetails(AppUser student) {
-    final initial =
-    (student.name?.isNotEmpty == true ? student.name![0] : 'S')
-        .toUpperCase();
-    final statusColor = student.isActive ? AppColors.success : AppColors.error;
-
-    final details = <_Detail>[
-      _Detail(Icons.tag_rounded, 'Roll No', '${student.rollNo ?? "-"}'),
-      _Detail(Icons.class_rounded, 'Standard', '${student.studentClass ?? "-"}'),
-      _Detail(Icons.groups_rounded, 'Division', '${student.division ?? "-"}'),
-      _Detail(Icons.translate_rounded, 'Medium', '${student.medium ?? "-"}'),
-      if (student.studentGroup != null && student.studentGroup!.isNotEmpty)
-        _Detail(Icons.category_rounded, 'Selected Group', student.studentGroup!),
-      _Detail(Icons.collections_bookmark_rounded, 'Enrolled Subjects', student.enrolledSubjects.join(', ')),
-      if (student.academicYear != null && student.academicYear!.isNotEmpty)
-        _Detail(Icons.event_rounded, 'Academic Year', student.academicYear!),
-    ];
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) => SafeArea(
-        top: false,
-        child: Container(
-          constraints: BoxConstraints(
-            maxHeight: MediaQuery.of(ctx).size.height * 0.88,
-          ),
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-          ),
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Center(
-                  child: Container(
-                    width: 40,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: AppColors.border,
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 20),
-
-                // Profile header
-                Center(
-                  child: Column(
-                    children: [
-                      CircleAvatar(
-                        radius: 34,
-                        backgroundColor: AppColors.primarySoft,
-                        child: Text(
-                          initial,
-                          style: const TextStyle(
-                            fontWeight: FontWeight.w800,
-                            fontSize: 28,
-                            color: AppColors.primary,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      Text(
-                        student.name ?? 'Student',
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.w800,
-                          color: AppColors.textPrimary,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        student.email,
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          fontSize: 13,
-                          color: AppColors.textSecondary,
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 5,
-                        ),
-                        decoration: BoxDecoration(
-                          color: statusColor.withOpacity(0.12),
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Container(
-                              width: 7,
-                              height: 7,
-                              decoration: BoxDecoration(
-                                color: statusColor,
-                                shape: BoxShape.circle,
-                              ),
-                            ),
-                            const SizedBox(width: 6),
-                            Text(
-                              student.isActive ? 'Active' : 'Disabled',
-                              style: TextStyle(
-                                color: statusColor,
-                                fontWeight: FontWeight.w700,
-                                fontSize: 12,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 22),
-
-                const Text(
-                  'Enrollment details',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w800,
-                    fontSize: 14,
-                    color: AppColors.textPrimary,
-                  ),
-                ),
-                const SizedBox(height: 10),
-
-                // Detail grid (2 columns)
-                Wrap(
-                  spacing: 10,
-                  runSpacing: 10,
-                  children: details
-                      .map((d) => _DetailTile(detail: d))
-                      .toList(),
-                ),
-
-                if (student.institution != null &&
-                    student.institution!.isNotEmpty) ...[
-                  const SizedBox(height: 10),
-                  _DetailTile(
-                    detail: _Detail(
-                      Icons.apartment_rounded,
-                      'Institution',
-                      student.institution!,
-                    ),
-                    fullWidth: true,
-                  ),
-                ],
-
-                const SizedBox(height: 22),
-                Row(
-                  children: [
-                    Expanded(
-                      child: SizedBox(
-                        height: 48,
-                        child: OutlinedButton(
-                          onPressed: () => Navigator.pop(ctx),
-                          style: OutlinedButton.styleFrom(
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(14),
-                            ),
-                            side: const BorderSide(color: AppColors.border),
-                          ),
-                          child: const Text('Close'),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: SizedBox(
-                        height: 48,
-                        child: ElevatedButton.icon(
-                          onPressed: () {
-                            Navigator.pop(ctx);
-                            _toggleStudentStatus(student, !student.isActive);
-                          },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: student.isActive
-                                ? AppColors.error
-                                : AppColors.success,
-                            foregroundColor: Colors.white,
-                            elevation: 0,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(14),
-                            ),
-                          ),
-                          icon: Icon(
-                            student.isActive
-                                ? Icons.block_rounded
-                                : Icons.check_circle_rounded,
-                            size: 18,
-                          ),
-                          label: Text(student.isActive ? 'Disable' : 'Enable'),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => AdminStudentDetailsScreen(
+          student: student,
+          onStatusChanged: (newStatus) {
+            _toggleStudentStatus(student, newStatus);
+          },
+          onResetPassword: () {
+            _showResetPasswordDialog(student);
+          },
         ),
       ),
-    );
+    ).then((_) {
+      widget.onRefresh();
+    });
   }
 
   // ───────────────────────── Build ─────────────────────────
@@ -553,6 +408,65 @@ class _AdminStudentsTabState extends State<AdminStudentsTab>
                     ),
                   ),
                 ],
+              ),
+            ),
+
+          if (_hasDuplicateRollNumbers)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 14),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+                decoration: BoxDecoration(
+                  color: AppColors.warning.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: AppColors.warning.withOpacity(0.4)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.warning_amber_rounded, color: AppColors.warning, size: 22),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Duplicate roll numbers detected',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.textPrimary,
+                            ),
+                          ),
+                          Text(
+                            'Multiple students share the same roll number. Tap to renumber sequentially (1, 2, 3...).',
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              color: AppColors.textSecondary.withOpacity(0.9),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    ElevatedButton(
+                      onPressed: _isFixingRolls ? null : _handleFixDuplicateRolls,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.warning,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        elevation: 0,
+                      ),
+                      child: _isFixingRolls
+                          ? const SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                            )
+                          : const Text('Fix Rolls', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                    ),
+                  ],
+                ),
               ),
             ),
 

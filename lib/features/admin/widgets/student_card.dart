@@ -24,20 +24,17 @@ class StudentCard extends StatelessWidget {
         : 'Student';
     final initial = displayName.isNotEmpty ? displayName[0].toUpperCase() : 'S';
     final rollNo = student.rollNo ?? '-';
-    final std = student.studentClass ?? '-';
-    final div = student.division ?? '-';
-    final medium = student.medium ?? '-';
-    final group = student.studentGroup;
 
     return AppCard(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      onTap: onViewDetails,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              // Avatar with active/inactive halo
+              // Avatar
               CircleAvatar(
                 radius: 22,
                 backgroundColor: student.isActive
@@ -56,7 +53,7 @@ class StudentCard extends StatelessWidget {
               ),
               const SizedBox(width: 14),
 
-              // Student Info
+              // Student Info: Name, Roll Number, Email
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -132,7 +129,7 @@ class StudentCard extends StatelessWidget {
 
               // Active / Disabled Badge
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
                 decoration: BoxDecoration(
                   color: student.isActive
                       ? AppColors.success.withOpacity(0.12)
@@ -169,33 +166,13 @@ class StudentCard extends StatelessWidget {
             ],
           ),
 
-          const SizedBox(height: 12),
-
-          // Metadata Chips Row (Standard, Division, Medium, Group)
-          Wrap(
-            spacing: 8,
-            runSpacing: 6,
-            children: [
-              _buildMetaChip(Icons.school_rounded, 'Std $std • Div $div'),
-              _buildMetaChip(Icons.language_rounded, '$medium Medium'),
-              if (group != null && group.isNotEmpty)
-                _buildMetaChip(Icons.science_outlined, 'Group: $group'),
-              _buildMetaChip(Icons.menu_book_rounded, student.enrolledSubjects.join(', ')),
-              if (student.institution != null && student.institution!.isNotEmpty)
-                _buildMetaChip(Icons.account_balance_outlined, student.institution!),
-            ],
-          ),
-
           const SizedBox(height: 10),
           const Divider(height: 1, color: AppColors.border),
           const SizedBox(height: 6),
 
-          // Actions Row
-          Wrap(
-            alignment: WrapAlignment.end,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            spacing: 2,
-            runSpacing: 2,
+          // Actions Row: Reset Pass, Details, Disable / Enable
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
             children: [
               if (onResetPassword != null)
                 TextButton.icon(
@@ -242,39 +219,6 @@ class StudentCard extends StatelessWidget {
             ],
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildMetaChip(IconData icon, String text) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(
-        color: AppColors.cardLight,
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: AppColors.border.withOpacity(0.6)),
-      ),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 240),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 12, color: AppColors.textSecondary),
-            const SizedBox(width: 4),
-            Flexible(
-              child: Text(
-                text,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.textSecondary,
-                ),
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
@@ -10,6 +11,9 @@ import 'package:mcq_test_app/models/teacher_assignment.dart';
 import 'package:mcq_test_app/models/academic_configuration.dart';
 import 'package:mcq_test_app/models/test_backup.dart';
 import 'package:mcq_test_app/models/performance_aggregate.dart';
+import 'package:mcq_test_app/models/assigned_teacher.dart';
+import 'package:mcq_test_app/models/chat_conversation.dart';
+import 'package:mcq_test_app/models/chat_message.dart';
 
 class SupabaseService {
   static final SupabaseService _instance = SupabaseService._internal();
@@ -39,10 +43,14 @@ class SupabaseService {
     final cleanEmail = email.trim().toLowerCase();
     final cleanPassword = password.trim();
 
+    if (cleanEmail.isEmpty || cleanPassword.isEmpty) {
+      throw 'Please enter both email address and password.';
+    }
+
     AuthResponse? response;
     dynamic firstError;
 
-    // 1. Standard signInWithPassword attempt
+    // 1. Standard signInWithPassword attempt - strictly checks BOTH email and password
     try {
       response = await supabase.auth.signInWithPassword(
         email: cleanEmail,
@@ -50,7 +58,7 @@ class SupabaseService {
       );
     } catch (e) {
       firstError = e;
-      debugPrint('Initial signInWithPassword failed: $e. Checking auto-sync...');
+      debugPrint('Initial signInWithPassword failed: $e');
 
       // If error is schema scan failure (NULL tokens in auth.users) or server error, attempt auto-repair
       final errStr = e.toString().toLowerCase();
@@ -61,7 +69,7 @@ class SupabaseService {
         try {
           debugPrint('Attempting auto-repair via repair_auth_users RPC...');
           await supabase.rpc('repair_auth_users');
-          // Retry login immediately after repair
+          // Retry login immediately after repair with original credentials
           response = await supabase.auth.signInWithPassword(
             email: cleanEmail,
             password: cleanPassword,
@@ -72,46 +80,10 @@ class SupabaseService {
       }
     }
 
-    // 2. Fallback: Check teacher_temp_login RPC and handle prefix variances (#)
+    // If authentication failed (e.g. wrong password or email), reject immediately
     if (response == null || response.user == null) {
-      final passwordsToTry = <String>[];
-      if (cleanPassword.startsWith('#')) {
-        passwordsToTry.add(cleanPassword.substring(1));
-      }
-      passwordsToTry.add(cleanPassword);
-      if (!cleanPassword.startsWith('#')) {
-        passwordsToTry.add('#$cleanPassword');
-      }
-
-      for (final pw in passwordsToTry) {
-        // A. Try direct signInWithPassword with normalized password
-        try {
-          response = await supabase.auth.signInWithPassword(
-            email: cleanEmail,
-            password: pw,
-          );
-          if (response.user != null) break;
-        } catch (_) {}
-
-        // B. Try teacher_temp_login RPC to auto-heal / sync temporary password
-        try {
-          final synced = await supabase.rpc('teacher_temp_login', params: {
-            'p_email': cleanEmail,
-            'p_password': pw,
-          });
-          if (synced == true) {
-            response = await supabase.auth.signInWithPassword(
-              email: cleanEmail,
-              password: pw,
-            );
-            if (response.user != null) break;
-          }
-        } catch (_) {}
-      }
-    }
-
-    if (response == null || response.user == null) {
-      throw firstError ?? 'Invalid email or password. Please verify your login credentials or check with the administrator.';
+      throw firstError ??
+          'Invalid email or password. Please verify your login credentials or check with the administrator.';
     }
 
     final profile = await getUserProfile(response.user!.id);
@@ -228,32 +200,13 @@ class SupabaseService {
     final user = response.user;
     if (user != null) {
       try {
-        // 1. Allocate roll number atomically via RPC or Backend API
-        String allocatedRollNo;
-        try {
-          final rpcRes = await supabase.rpc('allocate_student_roll_no', params: {
-            'p_institution': institution,
-            'p_academic_year': academicYear,
-            'p_standard': studentClass,
-            'p_division': division,
-          });
-          allocatedRollNo = rpcRes.toString();
-        } catch (_) {
-          // Fallback: Query max roll number
-          final countRes = await supabase
-              .from('student_enrollments')
-              .select('roll_no')
-              .eq('institution', institution)
-              .eq('academic_year', academicYear)
-              .eq('standard', studentClass)
-              .eq('division', division);
-          int max = 0;
-          for (var row in (countRes as List)) {
-            final n = int.tryParse(row['roll_no'].toString()) ?? 0;
-            if (n > max) max = n;
-          }
-          allocatedRollNo = (max + 1).toString();
-        }
+        // 1. Allocate globally unique roll number atomically
+        final allocatedRollNo = await getNextUniqueStudentRollNo(
+          institution: institution,
+          academicYear: academicYear,
+          studentClass: studentClass,
+          division: division,
+        );
 
         // 2. Save profile in public.users
         await supabase.from('users').upsert({
@@ -317,31 +270,13 @@ class SupabaseService {
     final institution = meta['institution']?.toString() ?? 'Sharda Mandir';
     final academicYear = meta['academic_year']?.toString() ?? '2026-2027';
 
-    // 1. Allocate roll number
-    String allocatedRollNo;
-    try {
-      final rpcRes = await supabase.rpc('allocate_student_roll_no', params: {
-        'p_institution': institution,
-        'p_academic_year': academicYear,
-        'p_standard': studentClass,
-        'p_division': division,
-      });
-      allocatedRollNo = rpcRes.toString();
-    } catch (_) {
-      final countRes = await supabase
-          .from('student_enrollments')
-          .select('roll_no')
-          .eq('institution', institution)
-          .eq('academic_year', academicYear)
-          .eq('standard', studentClass)
-          .eq('division', division);
-      int max = 0;
-      for (var row in (countRes as List)) {
-        final n = int.tryParse(row['roll_no'].toString()) ?? 0;
-        if (n > max) max = n;
-      }
-      allocatedRollNo = (max + 1).toString();
-    }
+    // 1. Allocate globally unique roll number atomically
+    final allocatedRollNo = await getNextUniqueStudentRollNo(
+      institution: institution,
+      academicYear: academicYear,
+      studentClass: studentClass,
+      division: division,
+    );
 
     // 2. Save profile in public.users
     await supabase.from('users').upsert({
@@ -468,6 +403,136 @@ class SupabaseService {
     }
   }
 
+  /// Allocates the next unique numeric roll number across ALL students in the system.
+  Future<String> getNextUniqueStudentRollNo({
+    String? institution,
+    String? academicYear,
+    String? studentClass,
+    String? division,
+  }) async {
+    // 1. Try atomic RPC first
+    try {
+      final rpcRes = await supabase.rpc('allocate_student_roll_no', params: {
+        if (institution != null) 'p_institution': institution,
+        if (academicYear != null) 'p_academic_year': academicYear,
+        if (studentClass != null) 'p_standard': studentClass,
+        if (division != null) 'p_division': division,
+      });
+      if (rpcRes != null && rpcRes.toString().trim().isNotEmpty) {
+        return rpcRes.toString().trim();
+      }
+    } catch (e) {
+      debugPrint('Notice: allocate_student_roll_no RPC fallback: $e');
+    }
+
+    // 2. Fallback: Query highest roll_no across all students in public.users
+    int maxRoll = 0;
+    try {
+      final usersRes = await supabase
+          .from('users')
+          .select('roll_no')
+          .eq('role', 'student');
+      for (var row in (usersRes as List)) {
+        final val = row['roll_no']?.toString().trim() ?? '';
+        final n = int.tryParse(val) ?? 0;
+        if (n > maxRoll) maxRoll = n;
+      }
+    } catch (e) {
+      debugPrint('Notice: Fallback reading users table for roll: $e');
+    }
+
+    // 3. Double-check student_enrollments in case users didn't yield records
+    try {
+      final enrollRes = await supabase
+          .from('student_enrollments')
+          .select('roll_no');
+      for (var row in (enrollRes as List)) {
+        final val = row['roll_no']?.toString().trim() ?? '';
+        final n = int.tryParse(val) ?? 0;
+        if (n > maxRoll) maxRoll = n;
+      }
+    } catch (e) {
+      debugPrint('Notice: Fallback reading student_enrollments for roll: $e');
+    }
+
+    return (maxRoll + 1).toString();
+  }
+
+  /// Updates a student's roll number in both public.users and public.student_enrollments.
+  Future<void> updateStudentRollNumber(String studentId, String newRollNo) async {
+    final cleanRoll = newRollNo.trim();
+    if (cleanRoll.isEmpty) throw Exception('Roll number cannot be empty');
+
+    await supabase.from('users').update({
+      'roll_no': cleanRoll,
+    }).eq('id', studentId);
+
+    try {
+      await supabase.from('student_enrollments').update({
+        'roll_no': cleanRoll,
+      }).eq('student_id', studentId);
+    } catch (e) {
+      debugPrint('Notice: student_enrollments update on roll change: $e');
+    }
+  }
+
+  /// Inspects all students in public.users and resolves any duplicate or missing roll numbers
+  /// (e.g. when multiple students currently have roll number '1').
+  /// Renumbers them sequentially (1, 2, 3...) based on their registration date (created_at).
+  /// Updates both public.users and public.student_enrollments.
+  Future<int> repairDuplicateStudentRollNumbers() async {
+    try {
+      final res = await supabase
+          .from('users')
+          .select('id, name, roll_no, created_at')
+          .eq('role', 'student')
+          .order('created_at', ascending: true);
+
+      final list = (res as List).map((e) => Map<String, dynamic>.from(e)).toList();
+      if (list.isEmpty) return 0;
+
+      // Check if duplicates or missing roll numbers exist
+      final seenRolls = <String>{};
+      bool needsRepair = false;
+      for (final s in list) {
+        final r = s['roll_no']?.toString().trim() ?? '';
+        if (r.isEmpty || seenRolls.contains(r)) {
+          needsRepair = true;
+          break;
+        }
+        seenRolls.add(r);
+      }
+
+      if (!needsRepair) return 0;
+
+      int updatedCount = 0;
+      for (int i = 0; i < list.length; i++) {
+        final expectedRoll = (i + 1).toString();
+        final currentRoll = list[i]['roll_no']?.toString().trim();
+        final studentId = list[i]['id']?.toString();
+
+        if (studentId != null && currentRoll != expectedRoll) {
+          await supabase.from('users').update({
+            'roll_no': expectedRoll,
+          }).eq('id', studentId);
+
+          try {
+            await supabase.from('student_enrollments').update({
+              'roll_no': expectedRoll,
+            }).eq('student_id', studentId);
+          } catch (_) {}
+
+          updatedCount++;
+        }
+      }
+      debugPrint('Successfully repaired $updatedCount student roll numbers to unique values.');
+      return updatedCount;
+    } catch (e) {
+      debugPrint('Error repairing duplicate student roll numbers: $e');
+      return 0;
+    }
+  }
+
   // ── Main Admin: Student Management ────────────────────────────────────────
   Future<List<AppUser>> getAllStudents() async {
     try {
@@ -492,7 +557,7 @@ class SupabaseService {
         }
       }
       final list = (response as List? ?? []);
-      return list.map((e) {
+      final students = list.map((e) {
         try {
           return AppUser.fromMap(Map<String, dynamic>.from(e));
         } catch (err) {
@@ -500,6 +565,38 @@ class SupabaseService {
           return null;
         }
       }).whereType<AppUser>().toList();
+
+      // Sort numerically by roll number if possible
+      students.sort((a, b) {
+        final aNum = int.tryParse(a.rollNo ?? '');
+        final bNum = int.tryParse(b.rollNo ?? '');
+        if (aNum != null && bNum != null) {
+          return aNum.compareTo(bNum);
+        }
+        return (a.rollNo ?? '').compareTo(b.rollNo ?? '');
+      });
+
+      // Detect if multiple students share duplicate roll numbers (e.g. 1, 1, 1)
+      final seen = <String>{};
+      bool hasDupes = false;
+      for (final s in students) {
+        final r = s.rollNo?.trim() ?? '';
+        if (r.isNotEmpty && seen.contains(r)) {
+          hasDupes = true;
+          break;
+        }
+        if (r.isNotEmpty) seen.add(r);
+      }
+
+      if (hasDupes && students.length > 1) {
+        // Auto-repair in background so next fetch/screen load is clean
+        unawaited(repairDuplicateStudentRollNumbers().catchError((e) {
+          debugPrint('Notice: background roll repair: $e');
+          return 0;
+        }));
+      }
+
+      return students;
     } catch (e) {
       debugPrint('Error getting all students: $e');
       rethrow;
@@ -1211,6 +1308,103 @@ class SupabaseService {
     }
   }
 
+  /// Fetch all attempts for a student by studentId (for Admin / reporting)
+  Future<List<Map<String, dynamic>>> getStudentAttemptsByStudentId(String studentId) async {
+    try {
+      final response = await supabase
+          .from('attempts')
+          .select('*, tests(*)')
+          .eq('student_id', studentId)
+          .order('submitted_at', ascending: true);
+
+      return List<Map<String, dynamic>>.from(response as List);
+    } catch (e) {
+      debugPrint('Error getting student attempts by ID: $e');
+      return [];
+    }
+  }
+
+  /// Fetch all published tests eligible for a student based on standard, division, medium, and group
+  Future<List<Test>> getEligiblePublishedTestsForStudentProfile({
+    required String studentClass,
+    required String division,
+    required String medium,
+    String? studentGroup,
+  }) async {
+    try {
+      List<dynamic> responseList = [];
+      try {
+        final response = await supabase
+            .from('tests')
+            .select()
+            .eq('status', 'published')
+            .order('created_at', ascending: false)
+            .timeout(const Duration(seconds: 6));
+        responseList = response as List;
+      } catch (err1) {
+        debugPrint('Direct published tests query error: $err1');
+        final fallback = await supabase
+            .from('tests')
+            .select()
+            .order('created_at', ascending: false)
+            .timeout(const Duration(seconds: 6));
+        responseList = (fallback as List)
+            .where((t) => (t['status'] ?? '').toString().toLowerCase().trim() == 'published')
+            .toList();
+      }
+
+      final allTests = responseList.map((e) {
+        try {
+          return Test.fromMap(Map<String, dynamic>.from(e));
+        } catch (_) {
+          return null;
+        }
+      }).whereType<Test>().toList();
+
+      final studentClassNum = RegExp(r'\d+').firstMatch(studentClass)?.group(0);
+      final sDivClean = division.trim().toUpperCase();
+      final sMedClean = medium.trim().toLowerCase();
+
+      return allTests.where((test) {
+        // Match Class / Standard
+        final testClassNum = RegExp(r'\d+').firstMatch(test.studentClass)?.group(0);
+        if (studentClassNum != null && testClassNum != null) {
+          if (studentClassNum != testClassNum) return false;
+        } else if (test.studentClass.trim().toLowerCase() != studentClass.trim().toLowerCase()) {
+          return false;
+        }
+
+        // Match Medium ('Both' or 'All' applies to all mediums)
+        final tMed = test.medium.trim().toLowerCase();
+        if (tMed.isNotEmpty && sMedClean.isNotEmpty && tMed != 'both' && tMed != 'all') {
+          if (tMed != sMedClean) return false;
+        }
+
+        // Match Division if specified ('All' or 'Both' applies to all divisions)
+        if (test.division != null && test.division!.trim().isNotEmpty) {
+          final tDiv = test.division!.trim().toUpperCase();
+          if (tDiv != 'ALL' && tDiv != 'BOTH' && sDivClean.isNotEmpty && tDiv != sDivClean) {
+            return false;
+          }
+        }
+
+        // Group filtering (Maths / Biology)
+        final subjLower = test.subject.trim().toLowerCase();
+        if (subjLower.contains('math') && studentGroup != null && studentGroup.isNotEmpty && !studentGroup.toLowerCase().contains('math')) {
+          return false;
+        }
+        if (subjLower.contains('bio') && studentGroup != null && studentGroup.isNotEmpty && !studentGroup.toLowerCase().contains('bio')) {
+          return false;
+        }
+
+        return true;
+      }).toList();
+    } catch (e) {
+      debugPrint('Error getting eligible tests for student: $e');
+      return [];
+    }
+  }
+
   Future<Map<String, String>> getAttemptAnswers(String attemptId) async {
     final response = await supabase
         .from('answers')
@@ -1381,4 +1575,483 @@ class SupabaseService {
       }
     }
   }
+
+  // ── PRIVATE TEACHER-STUDENT CHAT ──────────────────────────────────────────
+  // STRICT PRIVACY: Admin has ABSOLUTELY NO ACCESS to chat tables or conversations.
+
+  /// Returns teachers assigned to the currently logged in student
+  Future<List<AssignedTeacher>> getAssignedTeachersForCurrentStudent() async {
+    final user = currentUser;
+    if (user == null) return [];
+
+    // 1. Try atomic database RPC function
+    try {
+      final res = await supabase.rpc('get_student_assigned_teachers');
+      if (res is List) {
+        return res.map((e) => AssignedTeacher.fromMap(Map<String, dynamic>.from(e))).toList();
+      }
+    } catch (rpcErr) {
+      debugPrint('Notice: get_student_assigned_teachers RPC fallback: $rpcErr');
+    }
+
+    // 2. Client-side fallback: Match student enrollment & group with teacher assignments
+    try {
+      AppUser? student = await getUserProfile(user.id);
+      student ??= getFallbackUserProfileFromAuth(user);
+
+      final studentClass = (student.studentClass ?? '11').trim();
+      final studentDiv = (student.division ?? 'A').trim().toUpperCase();
+      final studentMed = (student.medium ?? 'English').trim().toLowerCase();
+      final studentInst = (student.institution ?? 'Sharda Mandir').trim().toLowerCase();
+      final isAcc = studentInst.contains('acc');
+
+      // Fetch active teachers
+      final teachersRes = await supabase
+          .from('users')
+          .select('id, name, email')
+          .eq('role', 'teacher')
+          .eq('is_active', true);
+      final teachersList = (teachersRes as List).cast<Map<String, dynamic>>();
+      if (teachersList.isEmpty) return [];
+
+      final teacherIds = teachersList.map((t) => t['id'].toString()).toList();
+
+      // Fetch assignments for these teachers
+      final assignmentsRes = await supabase
+          .from('teacher_assignments')
+          .select()
+          .inFilter('teacher_id', teacherIds);
+      final assignments = (assignmentsRes as List)
+          .map((e) => TeacherAssignment.fromMap(Map<String, dynamic>.from(e)))
+          .toList();
+
+      final Map<String, Set<String>> teacherSubjectsMap = {};
+
+      for (var a in assignments) {
+        // Institution check
+        final aInst = a.institution.trim().toLowerCase();
+        final isAAcc = aInst.contains('acc');
+        if (isAcc != isAAcc) continue;
+        if (!isAcc && aInst.isNotEmpty && studentInst.isNotEmpty && aInst != studentInst) continue;
+
+        // Standard check
+        if (a.standard.trim() != studentClass) continue;
+
+        // Division check
+        var aDiv = a.division.trim().toUpperCase();
+        if (aDiv.startsWith('DIV ')) aDiv = aDiv.substring(4).trim();
+        if (!isAcc && aDiv != 'ALL' && aDiv != studentDiv) continue;
+
+        // Medium check
+        final aMed = a.medium.trim().toLowerCase();
+        if (aMed.isNotEmpty && studentMed.isNotEmpty && aMed != 'both' && aMed != 'all' && aMed != studentMed) {
+          continue;
+        }
+
+        // Subject check
+        if (!student.takesSubject(a.subject)) continue;
+
+        teacherSubjectsMap.putIfAbsent(a.teacherId, () => <String>{}).add(a.subject);
+      }
+
+      final List<AssignedTeacher> result = [];
+      for (var t in teachersList) {
+        final tid = t['id'].toString();
+        if (teacherSubjectsMap.containsKey(tid)) {
+          result.add(AssignedTeacher(
+            teacherId: tid,
+            name: t['name']?.toString() ?? 'Teacher',
+            email: t['email']?.toString() ?? '',
+            subjects: teacherSubjectsMap[tid]!.toList(),
+          ));
+        }
+      }
+      return result;
+    } catch (e) {
+      debugPrint('Error getting assigned teachers: $e');
+      return [];
+    }
+  }
+
+  /// Returns authorized students for the currently logged in teacher
+  Future<List<AppUser>> getAuthorizedStudentsForCurrentTeacher() async {
+    final user = currentUser;
+    if (user == null) return [];
+
+    try {
+      final assignments = await getTeacherAssignments(user.id);
+      if (assignments.isEmpty) return [];
+
+      final allStudents = await getAllStudents();
+      return allStudents.where((student) {
+        return assignments.any((a) {
+          // 1. Institution check
+          final aInst = a.institution.trim().toLowerCase();
+          final sInst = (student.institution ?? 'Sharda Mandir').trim().toLowerCase();
+          final isAAcc = aInst.contains('acc');
+          final isSAcc = sInst.contains('acc');
+          if (isAAcc != isSAcc) return false;
+          if (!isAAcc && aInst.isNotEmpty && sInst.isNotEmpty && aInst != sInst) return false;
+
+          // 2. Standard check
+          if (a.standard.trim() != (student.studentClass ?? '').trim()) return false;
+
+          // 3. Division check
+          var aDiv = a.division.trim().toUpperCase();
+          var sDiv = (student.division ?? '').trim().toUpperCase();
+          if (aDiv.startsWith('DIV ')) aDiv = aDiv.substring(4).trim();
+          if (sDiv.startsWith('DIV ')) sDiv = sDiv.substring(4).trim();
+          if (!isAAcc && aDiv != 'ALL' && aDiv != sDiv) return false;
+
+          // 4. Medium check
+          final aMed = a.medium.trim().toLowerCase();
+          final sMed = (student.medium ?? 'English').trim().toLowerCase();
+          if (aMed.isNotEmpty && sMed.isNotEmpty && aMed != 'both' && aMed != 'all' && aMed != sMed) {
+            return false;
+          }
+
+          // 5. Subject check
+          return student.takesSubject(a.subject);
+        });
+      }).toList();
+    } catch (e) {
+      debugPrint('Error getting authorized students for teacher: $e');
+      return [];
+    }
+  }
+
+  /// Returns conversation list for the currently logged-in student or teacher
+  Future<List<ChatConversation>> getUserConversations() async {
+    final user = currentUser;
+    if (user == null) return [];
+
+    // 1. Try atomic RPC
+    try {
+      final res = await supabase.rpc('get_user_conversations');
+      if (res is List) {
+        return res
+            .map((e) => ChatConversation.fromMap(Map<String, dynamic>.from(e), currentUserId: user.id))
+            .toList();
+      }
+    } catch (rpcErr) {
+      debugPrint('Notice: get_user_conversations RPC fallback: $rpcErr');
+    }
+
+    // 2. Client-side fallback
+    try {
+      final convRes = await supabase
+          .from('chat_conversations')
+          .select()
+          .or('student_id.eq.${user.id},teacher_id.eq.${user.id}')
+          .order('last_message_at', ascending: false);
+
+      final convList = (convRes as List).cast<Map<String, dynamic>>();
+      if (convList.isEmpty) return [];
+
+      final otherUserIds = convList
+          .map((c) => (c['student_id'] == user.id ? c['teacher_id'] : c['student_id']).toString())
+          .toSet()
+          .toList();
+
+      final studentIds = convList.map((c) => c['student_id'].toString()).toSet().toList();
+
+      // Fetch user profiles for other participants
+      final usersRes = await supabase
+          .from('users')
+          .select('id, name, email, role, class, division, institution')
+          .inFilter('id', otherUserIds);
+      final usersMap = {for (var u in (usersRes as List)) u['id'].toString(): u};
+
+      // Fetch student enrollments for class/div metadata
+      Map<String, dynamic> enrollmentsMap = {};
+      try {
+        final enrollRes = await supabase
+            .from('student_enrollments')
+            .select('student_id, standard, division, institution')
+            .inFilter('student_id', studentIds);
+        enrollmentsMap = {for (var e in (enrollRes as List)) e['student_id'].toString(): e};
+      } catch (_) {}
+
+      // Calculate unread counts
+      final convIds = convList.map((c) => c['id'].toString()).toList();
+      Map<String, int> unreadMap = {};
+      try {
+        final unreadRes = await supabase
+            .from('chat_messages')
+            .select('conversation_id')
+            .inFilter('conversation_id', convIds)
+            .neq('sender_id', user.id)
+            .isFilter('read_at', null);
+
+        for (var row in (unreadRes as List)) {
+          final cid = row['conversation_id'].toString();
+          unreadMap[cid] = (unreadMap[cid] ?? 0) + 1;
+        }
+      } catch (_) {}
+
+      final List<ChatConversation> result = [];
+      for (var c in convList) {
+        final cid = c['id'].toString();
+        final sId = c['student_id'].toString();
+        final otherId = (sId == user.id ? c['teacher_id'] : sId).toString();
+        final otherUser = usersMap[otherId] ?? {};
+        final enroll = enrollmentsMap[sId] ?? {};
+
+        result.add(ChatConversation(
+          id: cid,
+          studentId: sId,
+          teacherId: c['teacher_id'].toString(),
+          otherUserId: otherId,
+          otherUserName: otherUser['name']?.toString() ?? otherUser['email']?.toString().split('@').first ?? 'User',
+          otherUserEmail: otherUser['email']?.toString() ?? '',
+          otherUserRole: otherUser['role']?.toString() ?? (otherId == sId ? 'student' : 'teacher'),
+          studentClass: enroll['standard']?.toString() ?? otherUser['class']?.toString(),
+          studentDivision: enroll['division']?.toString() ?? otherUser['division']?.toString(),
+          studentInstitution: enroll['institution']?.toString() ?? otherUser['institution']?.toString(),
+          lastMessageAt: c['last_message_at'] != null ? DateTime.tryParse(c['last_message_at'].toString()) : null,
+          lastMessageText: c['last_message_text']?.toString(),
+          lastMessageSenderId: c['last_message_sender_id']?.toString(),
+          unreadCount: unreadMap[cid] ?? 0,
+        ));
+      }
+
+      return result;
+    } catch (e) {
+      debugPrint('Error getting user conversations: $e');
+      return [];
+    }
+  }
+
+  /// Gets or creates a conversation between teacher and student
+  Future<String> getOrCreateConversation({
+    required String teacherId,
+    required String studentId,
+  }) async {
+    // 1. Try atomic RPC
+    try {
+      final res = await supabase.rpc('get_or_create_conversation', params: {
+        'p_teacher_id': teacherId,
+        'p_student_id': studentId,
+      });
+      if (res != null) return res.toString();
+    } catch (rpcErr) {
+      debugPrint('Notice: get_or_create_conversation RPC fallback: $rpcErr');
+    }
+
+    // 2. Direct fallback
+    try {
+      final existing = await supabase
+          .from('chat_conversations')
+          .select('id')
+          .eq('student_id', studentId)
+          .eq('teacher_id', teacherId)
+          .maybeSingle();
+
+      if (existing != null) {
+        return existing['id'].toString();
+      }
+
+      final inserted = await supabase
+          .from('chat_conversations')
+          .insert({
+            'student_id': studentId,
+            'teacher_id': teacherId,
+          })
+          .select('id')
+          .single();
+
+      return inserted['id'].toString();
+    } catch (e) {
+      debugPrint('Error getting or creating conversation: $e');
+      rethrow;
+    }
+  }
+
+  /// Loads messages for a given conversation
+  Future<List<ChatMessage>> getConversationMessages(
+    String conversationId, {
+    int limit = 100,
+  }) async {
+    try {
+      final response = await supabase
+          .from('chat_messages')
+          .select()
+          .eq('conversation_id', conversationId)
+          .order('created_at', ascending: true)
+          .limit(limit);
+
+      return (response as List)
+          .map((e) => ChatMessage.fromMap(Map<String, dynamic>.from(e)))
+          .toList();
+    } catch (e) {
+      debugPrint('Error fetching conversation messages: $e');
+      return [];
+    }
+  }
+
+  /// Sends a new message in a conversation
+  Future<ChatMessage> sendMessage({
+    required String conversationId,
+    required String messageText,
+  }) async {
+    final user = currentUser;
+    if (user == null) throw 'User session expired. Please log in.';
+
+    final cleanText = messageText.trim();
+    if (cleanText.isEmpty) throw 'Message cannot be empty.';
+
+    try {
+      final inserted = await supabase
+          .from('chat_messages')
+          .insert({
+            'conversation_id': conversationId,
+            'sender_id': user.id,
+            'message_text': cleanText,
+          })
+          .select()
+          .single();
+
+      // Keep conversation last message in sync in case trigger is pending
+      try {
+        await supabase.from('chat_conversations').update({
+          'last_message_at': DateTime.now().toIso8601String(),
+          'last_message_text': cleanText,
+          'last_message_sender_id': user.id,
+        }).eq('id', conversationId);
+      } catch (_) {}
+
+      return ChatMessage.fromMap(Map<String, dynamic>.from(inserted));
+    } catch (e) {
+      debugPrint('Error sending chat message: $e');
+      rethrow;
+    }
+  }
+
+  /// Marks all unread incoming messages in a conversation as read
+  Future<void> markMessagesAsRead(String conversationId) async {
+    final user = currentUser;
+    if (user == null) return;
+
+    // 1. Try atomic RPC
+    try {
+      await supabase.rpc('mark_messages_as_read', params: {
+        'p_conversation_id': conversationId,
+      });
+      return;
+    } catch (rpcErr) {
+      debugPrint('Notice: mark_messages_as_read RPC fallback: $rpcErr');
+    }
+
+    // 2. Direct fallback
+    try {
+      await supabase
+          .from('chat_messages')
+          .update({'read_at': DateTime.now().toIso8601String()})
+          .eq('conversation_id', conversationId)
+          .neq('sender_id', user.id)
+          .isFilter('read_at', null);
+    } catch (e) {
+      debugPrint('Error marking messages as read: $e');
+    }
+  }
+
+  /// Calculates total unread messages count for current user
+  Future<int> getUnreadChatCount() async {
+    final user = currentUser;
+    if (user == null) return 0;
+
+    try {
+      // Find conversations the user is in
+      final convRes = await supabase
+          .from('chat_conversations')
+          .select('id')
+          .or('student_id.eq.${user.id},teacher_id.eq.${user.id}');
+
+      final convIds = (convRes as List).map((c) => c['id'].toString()).toList();
+      if (convIds.isEmpty) return 0;
+
+      final unreadRes = await supabase
+          .from('chat_messages')
+          .select('id')
+          .inFilter('conversation_id', convIds)
+          .neq('sender_id', user.id)
+          .isFilter('read_at', null);
+
+      return (unreadRes as List).length;
+    } catch (e) {
+      debugPrint('Error counting unread messages: $e');
+      return 0;
+    }
+  }
+
+  /// Realtime subscription for conversation messages
+  RealtimeChannel subscribeToConversationMessages({
+    required String conversationId,
+    required void Function(ChatMessage message) onInsert,
+    required void Function(ChatMessage message) onUpdate,
+  }) {
+    final channelName = 'room:chat:$conversationId';
+    return supabase.channel(channelName)
+      ..onPostgresChanges(
+        event: PostgresChangeEvent.insert,
+        schema: 'public',
+        table: 'chat_messages',
+        filter: PostgresChangeFilter(
+          type: PostgresChangeFilterType.eq,
+          column: 'conversation_id',
+          value: conversationId,
+        ),
+        callback: (payload) {
+          try {
+            final msg = ChatMessage.fromMap(Map<String, dynamic>.from(payload.newRecord));
+            onInsert(msg);
+          } catch (e) {
+            debugPrint('Error parsing realtime insert payload: $e');
+          }
+        },
+      )
+      ..onPostgresChanges(
+        event: PostgresChangeEvent.update,
+        schema: 'public',
+        table: 'chat_messages',
+        filter: PostgresChangeFilter(
+          type: PostgresChangeFilterType.eq,
+          column: 'conversation_id',
+          value: conversationId,
+        ),
+        callback: (payload) {
+          try {
+            final msg = ChatMessage.fromMap(Map<String, dynamic>.from(payload.newRecord));
+            onUpdate(msg);
+          } catch (e) {
+            debugPrint('Error parsing realtime update payload: $e');
+          }
+        },
+      )
+      ..subscribe();
+  }
+
+  /// Realtime subscription for conversations list updates
+  RealtimeChannel subscribeToUserConversations({
+    required void Function() onUpdate,
+  }) {
+    final user = currentUser;
+    final uid = user?.id ?? 'anon';
+    final channelName = 'room:user_conversations:$uid';
+    return supabase.channel(channelName)
+      ..onPostgresChanges(
+        event: PostgresChangeEvent.all,
+        schema: 'public',
+        table: 'chat_conversations',
+        callback: (_) => onUpdate(),
+      )
+      ..onPostgresChanges(
+        event: PostgresChangeEvent.insert,
+        schema: 'public',
+        table: 'chat_messages',
+        callback: (_) => onUpdate(),
+      )
+      ..subscribe();
+  }
 }
+

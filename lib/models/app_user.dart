@@ -119,4 +119,38 @@ class AppUser {
       'temporary_password': temporaryPassword,
     };
   }
+
+  AppUser copyWith({
+    String? id,
+    String? role,
+    String? email,
+    String? name,
+    String? studentClass,
+    String? division,
+    String? rollNo,
+    String? studentGroup,
+    String? medium,
+    String? institution,
+    String? academicYear,
+    bool? isActive,
+    bool? mustChangePassword,
+    String? temporaryPassword,
+  }) {
+    return AppUser(
+      id: id ?? this.id,
+      role: role ?? this.role,
+      email: email ?? this.email,
+      name: name ?? this.name,
+      studentClass: studentClass ?? this.studentClass,
+      division: division ?? this.division,
+      rollNo: rollNo ?? this.rollNo,
+      studentGroup: studentGroup ?? this.studentGroup,
+      medium: medium ?? this.medium,
+      institution: institution ?? this.institution,
+      academicYear: academicYear ?? this.academicYear,
+      isActive: isActive ?? this.isActive,
+      mustChangePassword: mustChangePassword ?? this.mustChangePassword,
+      temporaryPassword: temporaryPassword ?? this.temporaryPassword,
+    );
+  }
 }
