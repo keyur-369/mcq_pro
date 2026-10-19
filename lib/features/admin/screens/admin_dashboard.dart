@@ -44,6 +44,7 @@ class _AdminDashboardState extends State<AdminDashboard>
     'publishedTests': 0,
     'totalAttempts': 0,
     'averageScore': 0.0,
+    'performanceByGroup': <Map<String, dynamic>>[],
   };
   bool _isLoading = true;
 
@@ -92,6 +93,7 @@ class _AdminDashboardState extends State<AdminDashboard>
     int testCount = 0;
     int attemptCount = 0;
     double avgScore = 0.0;
+    Map<String, dynamic> perfAnalytics = {};
 
     // 1. Load Teachers
     try {
@@ -130,22 +132,15 @@ class _AdminDashboardState extends State<AdminDashboard>
       debugPrint('Error loading tests count: $e');
     }
 
-    // 5. Load Total Attempts & Average Score
+    // 5. Load Total Attempts, Real Average Percentage & Standard/Medium Breakdown
     try {
-      final attemptsRes = await _supabase.supabase
-          .from('attempts')
-          .select('score');
-      final attemptsList = attemptsRes as List;
-      attemptCount = attemptsList.length;
-      int totalScore = 0;
-      for (var a in attemptsList) {
-        totalScore += (a['score'] as int? ?? 0);
-      }
-      avgScore = attemptsList.isNotEmpty
-          ? (totalScore / attemptsList.length)
-          : 0.0;
+      perfAnalytics = await _supabase.getAdminPerformanceAnalytics(
+        cachedStudents: students,
+      );
+      attemptCount = perfAnalytics['totalAttempts'] as int? ?? 0;
+      avgScore = (perfAnalytics['averageScore'] as num?)?.toDouble() ?? 0.0;
     } catch (e) {
-      debugPrint('Error loading attempts: $e');
+      debugPrint('Error loading performance analytics: $e');
     }
 
     if (mounted) {
@@ -163,6 +158,7 @@ class _AdminDashboardState extends State<AdminDashboard>
           'publishedTests': testCount,
           'totalAttempts': attemptCount,
           'averageScore': double.parse(avgScore.toStringAsFixed(1)),
+          'performanceByGroup': perfAnalytics['performanceByGroup'] ?? [],
         };
         _isLoading = false;
       });

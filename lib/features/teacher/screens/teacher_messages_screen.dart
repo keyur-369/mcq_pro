@@ -475,7 +475,9 @@ class _TeacherMessagesScreenState extends State<TeacherMessagesScreen> {
                             children: [
                               Expanded(
                                 child: Text(
-                                  conv.lastMessageText ?? 'Tap to chat with this student',
+                                  conv.cleanLastMessageText.isNotEmpty
+                                      ? conv.cleanLastMessageText
+                                      : 'Tap to chat with this student',
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                   style: TextStyle(

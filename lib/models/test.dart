@@ -72,4 +72,34 @@ class Test {
       'status': status.name,
     };
   }
+
+  Test copyWith({
+    String? id,
+    String? testCode,
+    String? teacherId,
+    String? studentClass,
+    String? division,
+    String? medium,
+    String? subject,
+    String? topic,
+    String? level,
+    int? duration,
+    TestStatus? status,
+    DateTime? createdAt,
+  }) {
+    return Test(
+      id: id ?? this.id,
+      testCode: testCode ?? this.testCode,
+      teacherId: teacherId ?? this.teacherId,
+      studentClass: studentClass ?? this.studentClass,
+      division: division ?? this.division,
+      medium: medium ?? this.medium,
+      subject: subject ?? this.subject,
+      topic: topic ?? this.topic,
+      level: level ?? this.level,
+      duration: duration ?? this.duration,
+      status: status ?? this.status,
+      createdAt: createdAt ?? this.createdAt,
+    );
+  }
 }

@@ -180,6 +180,7 @@ class _CreateTestScreenState extends ConsumerState<CreateTestScreen>
   List<String> _allowedMediums = ['English', 'Gujarati'];
   List<String> _allowedSubjects = ['Physics', 'Chemistry', 'Biology', 'Math'];
   List<String> _allowedDivisions = ['A', 'B', 'C'];
+  List<TeacherAssignment> _rawAssignments = [];
 
   final _topicController = TextEditingController();
   final _topicHintController = TextEditingController();
@@ -218,6 +219,7 @@ class _CreateTestScreenState extends ConsumerState<CreateTestScreen>
           .getTeacherAssignments(user.id);
       if (list.isNotEmpty && mounted) {
         setState(() {
+          _rawAssignments = list;
           _allowedStandards = list.map((a) => a.standard).toSet().toList();
           _allowedMediums = list.map((a) => a.medium).toSet().toList();
           _allowedSubjects = list.map((a) => a.subject).toSet().toList();
@@ -235,12 +237,25 @@ class _CreateTestScreenState extends ConsumerState<CreateTestScreen>
               _allowedSubjects.isNotEmpty) {
             selectedSubject = _allowedSubjects.first;
           }
-          if (_allowedDivisions.isNotEmpty) {
-            selectedDivision = _allowedDivisions.first;
+          final stdDivs = _currentAllowedDivisions;
+          if (stdDivs.isNotEmpty) {
+            selectedDivision = stdDivs.first;
           }
         });
       }
     }
+  }
+
+  List<String> get _currentAllowedDivisions {
+    if (selectedClass != null && _rawAssignments.isNotEmpty) {
+      final divs = _rawAssignments
+          .where((a) => a.standard == selectedClass)
+          .map((a) => a.division)
+          .toSet()
+          .toList();
+      if (divs.isNotEmpty) return divs;
+    }
+    return _allowedDivisions;
   }
 
   // ── Helpers ──────────────────────────────────────────────────────────────
@@ -904,16 +919,24 @@ class _CreateTestScreenState extends ConsumerState<CreateTestScreen>
                 Icons.school_rounded,
                 _allowedStandards,
                 selectedClass,
-                    (val) => setState(() => selectedClass = val),
+                (val) => setState(() {
+                  selectedClass = val;
+                  final stdDivs = _currentAllowedDivisions;
+                  if (stdDivs.isNotEmpty &&
+                      selectedDivision != null &&
+                      !stdDivs.contains(selectedDivision)) {
+                    selectedDivision = stdDivs.first;
+                  }
+                }),
               ),
-              if (_allowedDivisions.isNotEmpty) ...[
+              if (_currentAllowedDivisions.isNotEmpty) ...[
                 _glassDivider(),
                 _buildChoiceGroup(
                   'Division',
                   Icons.meeting_room_rounded,
-                  ['All', ..._allowedDivisions],
+                  ['All', ..._currentAllowedDivisions],
                   selectedDivision ?? 'All',
-                      (val) =>
+                  (val) =>
                       setState(() => selectedDivision = val == 'All' ? null : val),
                 ),
               ],

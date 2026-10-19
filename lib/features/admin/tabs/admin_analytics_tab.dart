@@ -30,7 +30,7 @@ class _AdminAnalyticsTabState extends State<AdminAnalyticsTab>
     final activeTeachers = widget.stats['activeTeachers'] ?? 0;
     final publishedTests = widget.stats['publishedTests'] ?? 0;
     final totalAttempts = widget.stats['totalAttempts'] ?? 0;
-    final avgScore = (widget.stats['averageScore'] as num?)?.toDouble() ?? 0.0;
+    // final avgScore = (widget.stats['averageScore'] as num?)?.toDouble() ?? 0.0;
 
     return RefreshIndicator(
       onRefresh: widget.onRefresh,
@@ -38,11 +38,10 @@ class _AdminAnalyticsTabState extends State<AdminAnalyticsTab>
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 40),
         children: [
-          _buildHero(avgScore),
-          const SizedBox(height: 24),
           _buildSectionTitle('Overview', 'Platform activity at a glance'),
           const SizedBox(height: 12),
           GridView.count(
+            padding: EdgeInsets.zero,
             crossAxisCount: 2,
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
@@ -139,28 +138,50 @@ class _AdminAnalyticsTabState extends State<AdminAnalyticsTab>
             'Average score by standard and medium',
           ),
           const SizedBox(height: 12),
-          AppCard(
-            padding: const EdgeInsets.fromLTRB(18, 20, 18, 20),
-            child: Column(
-              children: [
-                _buildBarRow('Std 12', 'English', 0.85, AppColors.primary),
-                const SizedBox(height: 18),
-                _buildBarRow('Std 12', 'Gujarati', 0.78, AppColors.secondary),
-                const SizedBox(height: 18),
-                _buildBarRow('Std 11', 'English', 0.72, AppColors.primary),
-                const SizedBox(height: 18),
-                _buildBarRow('Std 11', 'Gujarati', 0.69, AppColors.secondary),
-                const SizedBox(height: 20),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: const [
-                    _LegendDot(color: AppColors.primary, label: 'English'),
-                    SizedBox(width: 20),
-                    _LegendDot(color: AppColors.secondary, label: 'Gujarati'),
+          Builder(
+            builder: (context) {
+              final rawGroups = widget.stats['performanceByGroup'];
+              final List<Map<String, dynamic>> performanceGroups = (rawGroups is List && rawGroups.isNotEmpty)
+                  ? rawGroups.map((e) => Map<String, dynamic>.from(e as Map)).toList()
+                  : [
+                      {'standard': 'Std 12', 'medium': 'English', 'fraction': 0.0, 'attemptsCount': 0},
+                      {'standard': 'Std 12', 'medium': 'Gujarati', 'fraction': 0.0, 'attemptsCount': 0},
+                      {'standard': 'Std 11', 'medium': 'English', 'fraction': 0.0, 'attemptsCount': 0},
+                      {'standard': 'Std 11', 'medium': 'Gujarati', 'fraction': 0.0, 'attemptsCount': 0},
+                    ];
+
+              return AppCard(
+                padding: const EdgeInsets.fromLTRB(18, 20, 18, 20),
+                child: Column(
+                  children: [
+                    for (int i = 0; i < performanceGroups.length; i++) ...[
+                      _buildBarRow(
+                        performanceGroups[i]['standard']?.toString() ?? 'Std 12',
+                        performanceGroups[i]['medium']?.toString() ?? 'English',
+                        ((performanceGroups[i]['fraction'] as num?)?.toDouble() ?? 0.0).clamp(0.0, 1.0),
+                        (performanceGroups[i]['medium']?.toString() ?? '')
+                                .toLowerCase()
+                                .contains('guj')
+                            ? AppColors.secondary
+                            : AppColors.primary,
+                        count: (performanceGroups[i]['attemptsCount'] as num?)?.toInt() ?? 0,
+                      ),
+                      if (i < performanceGroups.length - 1)
+                        const SizedBox(height: 18),
+                    ],
+                    const SizedBox(height: 20),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: const [
+                        _LegendDot(color: AppColors.primary, label: 'English'),
+                        SizedBox(width: 20),
+                        _LegendDot(color: AppColors.secondary, label: 'Gujarati'),
+                      ],
+                    ),
                   ],
                 ),
-              ],
-            ),
+              );
+            },
           ),
         ],
       ),
@@ -339,8 +360,10 @@ class _AdminAnalyticsTabState extends State<AdminAnalyticsTab>
     String standard,
     String medium,
     double fraction,
-    Color color,
-  ) {
+    Color color, {
+    int count = 0,
+  }) {
+    final pct = (fraction * 100).round();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -367,8 +390,32 @@ class _AdminAnalyticsTabState extends State<AdminAnalyticsTab>
               ),
             ),
             const Spacer(),
+            if (count > 0)
+              Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: Text(
+                  '$count ${count == 1 ? "attempt" : "attempts"}',
+                  style: const TextStyle(
+                    fontSize: 11.5,
+                    color: AppColors.textMuted,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              )
+            else
+              const Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: Text(
+                  'No attempts',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: AppColors.textMuted,
+                    fontStyle: FontStyle.italic,
+                  ),
+                ),
+              ),
             Text(
-              '${(fraction * 100).round()}%',
+              '$pct%',
               style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
             ),
           ],

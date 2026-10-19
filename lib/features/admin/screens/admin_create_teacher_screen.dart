@@ -24,7 +24,10 @@ class _AdminCreateTeacherScreenState extends State<AdminCreateTeacherScreen> {
   final _passwordController = TextEditingController();
 
   final Set<String> _selectedStandards = {'11', '12'};
-  final Set<String> _selectedDivisions = {};
+  final Map<String, Set<String>> _standardDivisions = {
+    '11': {},
+    '12': {},
+  };
   final Set<String> _selectedMediums = {'English'};
   final Set<String> _selectedSubjects = {'Physics', 'Chemistry'};
 
@@ -184,15 +187,24 @@ class _AdminCreateTeacherScreenState extends State<AdminCreateTeacherScreen> {
       if (assignments.isNotEmpty && mounted) {
         setState(() {
           _selectedStandards.clear();
-          _selectedDivisions.clear();
+          _standardDivisions.clear();
           _selectedMediums.clear();
           _selectedSubjects.clear();
 
           for (final a in assignments) {
-            if (a.standard.isNotEmpty) _selectedStandards.add(a.standard);
-            if (a.division.isNotEmpty) _selectedDivisions.add(a.division);
+            if (a.standard.isNotEmpty) {
+              _selectedStandards.add(a.standard);
+              if (a.division.isNotEmpty) {
+                _standardDivisions.putIfAbsent(a.standard, () => <String>{}).add(a.division);
+              }
+            }
             if (a.medium.isNotEmpty) _selectedMediums.add(a.medium);
             if (a.subject.isNotEmpty) _selectedSubjects.add(a.subject);
+          }
+
+          // Ensure every selected standard has an entry
+          for (final std in _selectedStandards) {
+            _standardDivisions.putIfAbsent(std, () => <String>{});
           }
 
           if (assignments.first.institution.isNotEmpty) {
@@ -214,9 +226,13 @@ class _AdminCreateTeacherScreenState extends State<AdminCreateTeacherScreen> {
 
           // Clean up divisions according to institution to ensure no invalid cross-combinations
           if (_selectedInstitution == 'Sharda Mandir') {
-            _selectedDivisions.removeWhere((d) => !['A', 'B', 'C'].contains(d.toUpperCase()));
+            for (final std in _selectedStandards) {
+              _standardDivisions[std]?.removeWhere((d) => !['A', 'B', 'C'].contains(d.toUpperCase()));
+            }
           } else if (_selectedInstitution == 'Tuition ACC') {
-            _selectedDivisions.removeWhere((d) => d.toUpperCase() != 'ACC');
+            for (final std in _selectedStandards) {
+              _standardDivisions[std]?.removeWhere((d) => d.toUpperCase() != 'ACC');
+            }
           }
         });
       }
@@ -275,30 +291,37 @@ class _AdminCreateTeacherScreenState extends State<AdminCreateTeacherScreen> {
       return;
     }
 
-    if (_selectedDivisions.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select at least one Division / Group')),
-      );
-      return;
+    // Validate that each selected standard has at least one division selected
+    for (final std in _selectedStandards) {
+      final divs = _standardDivisions[std];
+      if (divs == null || divs.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Please select at least one Division for Standard $std')),
+        );
+        return;
+      }
     }
 
     // Frontend validation to prevent invalid institution-division combinations
     final isAcc = _selectedInstitution!.toLowerCase().contains('acc');
-    if (isAcc) {
-      final invalid = _selectedDivisions.where((d) => d.toUpperCase() != 'ACC').toList();
-      if (invalid.isNotEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Invalid divisions for Tuition ACC. Only ACC is allowed.')),
-        );
-        return;
-      }
-    } else {
-      final invalid = _selectedDivisions.where((d) => !['A', 'B', 'C'].contains(d.toUpperCase())).toList();
-      if (invalid.isNotEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Invalid divisions for Sharda Mandir. Only Div A, Div B, Div C are allowed.')),
-        );
-        return;
+    for (final std in _selectedStandards) {
+      final divs = _standardDivisions[std] ?? {};
+      if (isAcc) {
+        final invalid = divs.where((d) => d.toUpperCase() != 'ACC').toList();
+        if (invalid.isNotEmpty) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Invalid divisions for Standard $std in Tuition ACC. Only ACC is allowed.')),
+          );
+          return;
+        }
+      } else {
+        final invalid = divs.where((d) => !['A', 'B', 'C'].contains(d.toUpperCase())).toList();
+        if (invalid.isNotEmpty) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Invalid divisions for Standard $std in Sharda Mandir. Only Div A, Div B, Div C are allowed.')),
+          );
+          return;
+        }
       }
     }
 
@@ -318,12 +341,19 @@ class _AdminCreateTeacherScreenState extends State<AdminCreateTeacherScreen> {
 
     setState(() => _isLoading = true);
     try {
+      final allDivisions = _standardDivisions.values.expand((s) => s).toSet().toList();
+      final standardDivisionsMap = <String, List<String>>{};
+      for (final std in _selectedStandards) {
+        standardDivisionsMap[std] = (_standardDivisions[std] ?? {}).toList();
+      }
+
       if (isEditing) {
         await SupabaseService().updateTeacher(
           teacherId: widget.teacher!.id,
           name: name,
           standards: _selectedStandards.toList(),
-          divisions: _selectedDivisions.toList(),
+          divisions: allDivisions,
+          standardDivisions: standardDivisionsMap,
           mediums: _selectedMediums.toList(),
           subjects: _selectedSubjects.toList(),
           institution: _selectedInstitution!,
@@ -346,7 +376,8 @@ class _AdminCreateTeacherScreenState extends State<AdminCreateTeacherScreen> {
           email: email,
           temporaryPassword: password,
           standards: _selectedStandards.toList(),
-          divisions: _selectedDivisions.toList(),
+          divisions: allDivisions,
+          standardDivisions: standardDivisionsMap,
           mediums: _selectedMediums.toList(),
           subjects: _selectedSubjects.toList(),
           institution: _selectedInstitution!,
@@ -608,8 +639,10 @@ class _AdminCreateTeacherScreenState extends State<AdminCreateTeacherScreen> {
                                 setState(() {
                                   if (val) {
                                     _selectedStandards.add(std);
+                                    _standardDivisions.putIfAbsent(std, () => <String>{});
                                   } else {
                                     _selectedStandards.remove(std);
+                                    _standardDivisions.remove(std);
                                   }
                                 });
                               },
@@ -639,7 +672,9 @@ class _AdminCreateTeacherScreenState extends State<AdminCreateTeacherScreen> {
                                 setState(() {
                                   if (_selectedInstitution != 'Sharda Mandir') {
                                     _selectedInstitution = 'Sharda Mandir';
-                                    _selectedDivisions.clear();
+                                    for (final std in _selectedStandards) {
+                                      _standardDivisions[std]?.clear();
+                                    }
                                   }
                                 });
                               },
@@ -659,7 +694,9 @@ class _AdminCreateTeacherScreenState extends State<AdminCreateTeacherScreen> {
                                 setState(() {
                                   if (_selectedInstitution != 'Tuition ACC') {
                                     _selectedInstitution = 'Tuition ACC';
-                                    _selectedDivisions.clear();
+                                    for (final std in _selectedStandards) {
+                                      _standardDivisions[std]?.clear();
+                                    }
                                   }
                                 });
                               },
@@ -748,7 +785,7 @@ class _AdminCreateTeacherScreenState extends State<AdminCreateTeacherScreen> {
                         ),
                         const SizedBox(height: 16),
 
-                        // 4. Divisions / Groups — dynamic selectable chips
+                        // 4. Divisions / Groups — separate chip set per selected standard
                         const Text('Divisions / Groups', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
                         const SizedBox(height: 8),
                         if (_selectedInstitution == null)
@@ -777,32 +814,138 @@ class _AdminCreateTeacherScreenState extends State<AdminCreateTeacherScreen> {
                               ],
                             ),
                           )
-                        else
-                          Wrap(
-                            spacing: 8,
-                            children: _divisionOptions.map((div) {
-                              final isSel = _selectedDivisions.contains(div['val']);
-                              return FilterChip(
-                                showCheckmark: false,
-                                label: Text(div['label']!),
-                                labelStyle: TextStyle(
-                                  color: isSel ? Colors.white : AppColors.textSecondary,
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 13,
+                        else if (_selectedStandards.isEmpty)
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                            decoration: BoxDecoration(
+                              color: AppColors.cardLight,
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: AppColors.border),
+                            ),
+                            child: const Row(
+                              children: [
+                                Icon(Icons.info_outline_rounded, size: 18, color: AppColors.textMuted),
+                                SizedBox(width: 10),
+                                Expanded(
+                                  child: Text(
+                                    'Please select at least one standard above to configure divisions',
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      color: AppColors.textSecondary,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
                                 ),
-                                selected: isSel,
-                                onSelected: (val) {
-                                  setState(() {
-                                    if (val) {
-                                      _selectedDivisions.add(div['val']!);
-                                    } else {
-                                      _selectedDivisions.remove(div['val']!);
-                                    }
-                                  });
-                                },
-                              );
-                            }).toList(),
-                          ),
+                              ],
+                            ),
+                          )
+                        else ...[
+                          ...(_selectedStandards.toList()..sort()).map((std) {
+                            final currentDivs = _standardDivisions.putIfAbsent(std, () => <String>{});
+                            final isAllSelected = _divisionOptions.isNotEmpty &&
+                                currentDivs.length == _divisionOptions.length;
+
+                            return Container(
+                              margin: const EdgeInsets.only(bottom: 12),
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: AppColors.cardLight.withOpacity(0.6),
+                                borderRadius: BorderRadius.circular(14),
+                                border: Border.all(color: AppColors.border),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                        decoration: BoxDecoration(
+                                          gradient: const LinearGradient(
+                                            colors: AppColors.primaryGradient,
+                                            begin: Alignment.topLeft,
+                                            end: Alignment.bottomRight,
+                                          ),
+                                          borderRadius: BorderRadius.circular(8),
+                                        ),
+                                        child: Text(
+                                          'Standard $std',
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 12,
+                                            color: Colors.white,
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      const Text(
+                                        'Divisions',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.w600,
+                                          fontSize: 13,
+                                          color: AppColors.textPrimary,
+                                        ),
+                                      ),
+                                      const Spacer(),
+                                      TextButton(
+                                        style: TextButton.styleFrom(
+                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                          minimumSize: Size.zero,
+                                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                        ),
+                                        onPressed: () {
+                                          setState(() {
+                                            if (isAllSelected) {
+                                              currentDivs.clear();
+                                            } else {
+                                              currentDivs.addAll(_divisionOptions.map((d) => d['val']!));
+                                            }
+                                          });
+                                        },
+                                        child: Text(
+                                          isAllSelected ? 'Clear All' : 'Select All',
+                                          style: const TextStyle(
+                                            fontSize: 11.5,
+                                            fontWeight: FontWeight.w700,
+                                            color: AppColors.primary,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 10),
+                                  Wrap(
+                                    spacing: 8,
+                                    runSpacing: 6,
+                                    children: _divisionOptions.map((div) {
+                                      final isSel = currentDivs.contains(div['val']);
+                                      return FilterChip(
+                                        showCheckmark: false,
+                                        label: Text(div['label']!),
+                                        labelStyle: TextStyle(
+                                          color: isSel ? Colors.white : AppColors.textSecondary,
+                                          fontWeight: FontWeight.w600,
+                                          fontSize: 13,
+                                        ),
+                                        selected: isSel,
+                                        onSelected: (val) {
+                                          setState(() {
+                                            if (val) {
+                                              currentDivs.add(div['val']!);
+                                            } else {
+                                              currentDivs.remove(div['val']!);
+                                            }
+                                          });
+                                        },
+                                      );
+                                    }).toList(),
+                                  ),
+                                ],
+                              ),
+                            );
+                          }),
+                        ],
                         const SizedBox(height: 16),
 
                         // 5. Mediums — Gujarati, English, Both (Gujarati & English) selectable chips

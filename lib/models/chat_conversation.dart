@@ -56,6 +56,19 @@ class ChatConversation {
     }
   }
 
+  String get cleanLastMessageText {
+    if (lastMessageText == null || lastMessageText!.isEmpty) return '';
+    final text = lastMessageText!;
+    if (text.contains('[TEST_CARD:')) {
+      final line = text.split('\n').first;
+      if (line.isNotEmpty && !line.startsWith('[TEST_CARD:')) {
+        return line;
+      }
+      return '📝 Test Assignment';
+    }
+    return text;
+  }
+
   String get formattedLastMessageTime {
     if (lastMessageAt == null) return '';
     final local = lastMessageAt!.toLocal();

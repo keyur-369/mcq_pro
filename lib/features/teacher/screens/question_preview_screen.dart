@@ -45,14 +45,17 @@ class _QuestionPreviewScreenState extends State<QuestionPreviewScreen>
     try {
       final supabase = SupabaseService();
       String testId;
+      Test savedTest;
 
       if (widget.test.id.isNotEmpty) {
         testId = widget.test.id;
         await supabase.updateTest(testId, status);
+        savedTest = widget.test.copyWith(status: status);
       } else {
         final testToSave = Test(
           teacherId: widget.test.teacherId,
           studentClass: widget.test.studentClass,
+          division: widget.test.division,
           medium: widget.test.medium,
           subject: widget.test.subject,
           topic: widget.test.topic,
@@ -62,6 +65,7 @@ class _QuestionPreviewScreenState extends State<QuestionPreviewScreen>
           status: status,
         );
         testId = await supabase.createTest(testToSave);
+        savedTest = testToSave.copyWith(id: testId);
 
         final finalQuestions = _questions
             .map((q) => Question(
@@ -79,19 +83,19 @@ class _QuestionPreviewScreenState extends State<QuestionPreviewScreen>
       }
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              status == TestStatus.published
-                  ? '🎉 Test published successfully!'
-                  : '📝 Saved as draft',
+        if (status == TestStatus.published) {
+          _showPublishSuccessDialog(savedTest);
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text('📝 Saved as draft'),
+              backgroundColor: AppColors.secondary,
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             ),
-            backgroundColor: AppColors.success,
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          ),
-        );
-        Navigator.popUntil(context, (route) => route.isFirst);
+          );
+          Navigator.popUntil(context, (route) => route.isFirst);
+        }
       }
     } catch (e) {
       if (mounted) {
@@ -105,6 +109,26 @@ class _QuestionPreviewScreenState extends State<QuestionPreviewScreen>
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
+  }
+
+  void _showPublishSuccessDialog(Test test) {
+    final divStr = (test.division != null &&
+            test.division!.isNotEmpty &&
+            test.division!.toUpperCase() != 'ALL')
+        ? '-${test.division}'
+        : '';
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogCtx) => _PostPublishShareDialog(
+        test: test,
+        divStr: divStr,
+        onDone: () {
+          Navigator.pop(dialogCtx);
+          Navigator.popUntil(context, (route) => route.isFirst);
+        },
+      ),
+    );
   }
 
   // ── Build ─────────────────────────────────────────────────────────────────
@@ -849,3 +873,206 @@ class _QuestionPreviewScreenState extends State<QuestionPreviewScreen>
     );
   }
 }
+
+class _PostPublishShareDialog extends StatefulWidget {
+  final Test test;
+  final String divStr;
+  final VoidCallback onDone;
+
+  const _PostPublishShareDialog({
+    required this.test,
+    required this.divStr,
+    required this.onDone,
+  });
+
+  @override
+  State<_PostPublishShareDialog> createState() => _PostPublishShareDialogState();
+}
+
+class _PostPublishShareDialogState extends State<_PostPublishShareDialog> {
+  final SupabaseService _supabase = SupabaseService();
+  bool _isBroadcasting = false;
+
+  Future<void> _broadcastToClass() async {
+    setState(() => _isBroadcasting = true);
+    try {
+      final sentCount = await _supabase.broadcastTestToClass(test: widget.test);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.check_circle_rounded, color: Colors.white, size: 20),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    sentCount > 0
+                        ? '🎉 Interactive test card sent to $sentCount students in Std ${widget.test.studentClass}${widget.divStr}!'
+                        : 'Notice: No enrolled students found for Std ${widget.test.studentClass}${widget.divStr}.',
+                  ),
+                ),
+              ],
+            ),
+            backgroundColor: sentCount > 0 ? AppColors.success : AppColors.secondary,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+        );
+        widget.onDone();
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isBroadcasting = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to broadcast to class: $e'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = widget.test;
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      elevation: 0,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 20),
+      child: Container(
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(28),
+          boxShadow: [
+            BoxShadow(
+              color: AppColors.primary.withOpacity(0.18),
+              blurRadius: 28,
+              offset: const Offset(0, 10),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: AppColors.primaryGradient,
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: AppColors.primary.withOpacity(0.35),
+                    blurRadius: 14,
+                    offset: const Offset(0, 5),
+                  ),
+                ],
+              ),
+              child: const Icon(Icons.rocket_launch_rounded, color: Colors.white, size: 34),
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              '🎉 Test Published Live!',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.w900,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '${t.subject}: ${t.topic}',
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w700,
+                color: AppColors.primaryDark,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Std ${t.studentClass}${widget.divStr} • ${t.duration} mins${t.testCode != null ? " • Code: ${t.testCode}" : ""}',
+              style: const TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textSecondary,
+              ),
+            ),
+            const SizedBox(height: 20),
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: AppColors.primary.withOpacity(0.06),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: AppColors.primary.withOpacity(0.18)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.mark_chat_unread_rounded, color: AppColors.primary, size: 22),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'Broadcast an interactive card into the class chat so students can take this test with 1-tap!',
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        color: AppColors.textPrimary.withOpacity(0.85),
+                        height: 1.35,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 22),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: _isBroadcasting ? null : _broadcastToClass,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 13),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  elevation: 2,
+                ),
+                icon: _isBroadcasting
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                      )
+                    : const Icon(Icons.send_rounded, size: 18),
+                label: Text(
+                  _isBroadcasting ? 'Broadcasting...' : '📢 Send to Class Chat',
+                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800),
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              child: TextButton(
+                onPressed: _isBroadcasting ? null : widget.onDone,
+                child: const Text(
+                  'Later, Go to Dashboard',
+                  style: TextStyle(
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}

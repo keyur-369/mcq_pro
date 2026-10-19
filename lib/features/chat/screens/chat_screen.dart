@@ -4,7 +4,11 @@ import 'package:flutter/material.dart';
 import 'package:mcq_test_app/core/constants/app_colors.dart';
 import 'package:mcq_test_app/core/services/supabase_service.dart';
 import 'package:mcq_test_app/core/widgets/app_gradient_background.dart';
+import 'package:mcq_test_app/features/chat/widgets/chat_test_card.dart';
+import 'package:mcq_test_app/models/app_user.dart';
 import 'package:mcq_test_app/models/chat_message.dart';
+import 'package:mcq_test_app/models/chat_test_card.dart';
+import 'package:mcq_test_app/models/test.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class ChatScreen extends StatefulWidget {
@@ -44,6 +48,11 @@ class _ChatScreenState extends State<ChatScreen> {
 
   RealtimeChannel? _realtimeChannel;
   String? _currentUserId;
+  AppUser? _studentProfile;
+
+  bool get _isTeacher =>
+      (_currentUserId != null && _currentUserId == widget.teacherId) ||
+      widget.otherUserRole == 'student';
 
   @override
   void initState() {
@@ -78,6 +87,13 @@ class _ChatScreenState extends State<ChatScreen> {
 
       // 2. Fetch history
       final msgs = await _supabase.getConversationMessages(_conversationId!);
+
+      // 3. Load student profile if viewing as student for eligibility checking
+      if (!_isTeacher && _currentUserId != null) {
+        try {
+          _studentProfile = await _supabase.getUserProfile(_currentUserId!);
+        } catch (_) {}
+      }
 
       if (mounted) {
         setState(() {
@@ -600,60 +616,71 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Widget _buildMessageBubble(ChatMessage msg, bool isMine) {
+    final isTestCard = ChatTestCardData.isTestCard(msg.messageText);
+    final cardData = isTestCard ? ChatTestCardData.tryParse(msg.messageText) : null;
+
     return Container(
       constraints: BoxConstraints(
-        maxWidth: MediaQuery.of(context).size.width * 0.78,
+        maxWidth: MediaQuery.of(context).size.width * (cardData != null ? 0.88 : 0.78),
       ),
       child: Column(
         crossAxisAlignment: isMine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
         children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
-            decoration: BoxDecoration(
-              gradient: isMine
-                  ? const LinearGradient(
-                      colors: AppColors.primaryGradient,
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    )
-                  : LinearGradient(
-                      colors: [
-                        Colors.white.withOpacity(0.92),
-                        Colors.white.withOpacity(0.82),
-                      ],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-              borderRadius: BorderRadius.only(
-                topLeft: const Radius.circular(18),
-                topRight: const Radius.circular(18),
-                bottomLeft: Radius.circular(isMine ? 18 : 4),
-                bottomRight: Radius.circular(isMine ? 4 : 18),
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: isMine
-                      ? AppColors.primary.withOpacity(0.20)
-                      : Colors.black.withOpacity(0.04),
-                  blurRadius: 10,
-                  offset: const Offset(0, 4),
+          if (cardData != null)
+            ChatTestCard(
+              data: cardData,
+              isMine: isMine,
+              isTeacher: _isTeacher,
+              studentProfile: _studentProfile,
+            )
+          else
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
+              decoration: BoxDecoration(
+                gradient: isMine
+                    ? const LinearGradient(
+                        colors: AppColors.primaryGradient,
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      )
+                    : LinearGradient(
+                        colors: [
+                          Colors.white.withOpacity(0.92),
+                          Colors.white.withOpacity(0.82),
+                        ],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                borderRadius: BorderRadius.only(
+                  topLeft: const Radius.circular(18),
+                  topRight: const Radius.circular(18),
+                  bottomLeft: Radius.circular(isMine ? 18 : 4),
+                  bottomRight: Radius.circular(isMine ? 4 : 18),
                 ),
-              ],
-              border: Border.all(
-                color: isMine ? Colors.transparent : Colors.white.withOpacity(0.8),
-                width: 1,
+                boxShadow: [
+                  BoxShadow(
+                    color: isMine
+                        ? AppColors.primary.withOpacity(0.20)
+                        : Colors.black.withOpacity(0.04),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+                border: Border.all(
+                  color: isMine ? Colors.transparent : Colors.white.withOpacity(0.8),
+                  width: 1,
+                ),
+              ),
+              child: Text(
+                msg.messageText,
+                style: TextStyle(
+                  fontSize: 14.5,
+                  height: 1.35,
+                  color: isMine ? Colors.white : AppColors.textPrimary,
+                  fontWeight: FontWeight.w500,
+                ),
               ),
             ),
-            child: Text(
-              msg.messageText,
-              style: TextStyle(
-                fontSize: 14.5,
-                height: 1.35,
-                color: isMine ? Colors.white : AppColors.textPrimary,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ),
           const SizedBox(height: 3),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 4),
@@ -700,6 +727,23 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
+  void _showShareTestModal() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (ctx) => _ShareTestModal(
+        teacherId: _currentUserId ?? widget.teacherId,
+        studentName: widget.otherUserName,
+        onSelectTest: (test) {
+          Navigator.pop(ctx);
+          final cardData = ChatTestCardData.fromTest(test);
+          _sendMessage(cardData.toMessageText());
+        },
+      ),
+    );
+  }
+
   Widget _buildInputArea() {
     return Container(
       padding: EdgeInsets.fromLTRB(14, 8, 14, MediaQuery.of(context).viewInsets.bottom > 0 ? 8 : 14),
@@ -718,6 +762,45 @@ class _ChatScreenState extends State<ChatScreen> {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
+              if (_isTeacher) ...[
+                Tooltip(
+                  message: 'Share Test Card',
+                  child: Container(
+                    margin: const EdgeInsets.only(right: 8, bottom: 2),
+                    child: Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        onTap: _showShareTestModal,
+                        borderRadius: BorderRadius.circular(22),
+                        child: Container(
+                          width: 42,
+                          height: 42,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: Colors.white.withOpacity(0.9),
+                            border: Border.all(
+                              color: AppColors.primary.withOpacity(0.3),
+                              width: 1.2,
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: AppColors.primary.withOpacity(0.12),
+                                blurRadius: 6,
+                                offset: const Offset(0, 2),
+                              ),
+                            ],
+                          ),
+                          child: const Icon(
+                            Icons.quiz_rounded,
+                            color: AppColors.primary,
+                            size: 20,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
               Expanded(
                 child: Container(
                   constraints: const BoxConstraints(maxHeight: 120),
@@ -810,6 +893,332 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 }
 
+class _ShareTestModal extends StatefulWidget {
+  final String teacherId;
+  final String studentName;
+  final void Function(Test test) onSelectTest;
+
+  const _ShareTestModal({
+    required this.teacherId,
+    required this.studentName,
+    required this.onSelectTest,
+  });
+
+  @override
+  State<_ShareTestModal> createState() => _ShareTestModalState();
+}
+
+class _ShareTestModalState extends State<_ShareTestModal> {
+  final SupabaseService _supabase = SupabaseService();
+  List<Test> _tests = [];
+  bool _isLoading = true;
+  String? _errorMessage;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadTests();
+  }
+
+  Future<void> _loadTests() async {
+    setState(() => _isLoading = true);
+    try {
+      final allTests = await _supabase.getTeacherTests(widget.teacherId);
+      final published = allTests.where((t) => t.status == TestStatus.published).toList();
+      if (mounted) {
+        setState(() {
+          _tests = published;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _errorMessage = e.toString();
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+    return Container(
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.of(context).size.height * 0.75,
+      ),
+      margin: EdgeInsets.only(bottom: bottomInset),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.96),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.12),
+            blurRadius: 24,
+            offset: const Offset(0, -4),
+          ),
+        ],
+        border: Border.all(
+          color: Colors.white.withOpacity(0.8),
+          width: 1.5,
+        ),
+      ),
+      child: ClipRRect(
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Grab handle
+              Center(
+                child: Container(
+                  margin: const EdgeInsets.only(top: 10, bottom: 8),
+                  width: 38,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.withOpacity(0.35),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+
+              // Title bar
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 4, 16, 12),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          colors: AppColors.primaryGradient,
+                        ),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Icon(Icons.quiz_rounded, color: Colors.white, size: 20),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Share Test Card',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w900,
+                              color: AppColors.textPrimary,
+                            ),
+                          ),
+                          Text(
+                            'Send an interactive test card to ${widget.studentName}',
+                            style: const TextStyle(
+                              fontSize: 12.5,
+                              color: AppColors.textSecondary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close_rounded, color: AppColors.textSecondary),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                  ],
+                ),
+              ),
+
+              const Divider(height: 1),
+
+              // Tests list
+              Flexible(
+                child: _isLoading
+                    ? const Padding(
+                        padding: EdgeInsets.all(40),
+                        child: Center(child: CircularProgressIndicator()),
+                      )
+                    : _errorMessage != null
+                        ? Padding(
+                            padding: const EdgeInsets.all(24),
+                            child: Center(
+                              child: Text(
+                                'Error: $_errorMessage',
+                                style: const TextStyle(color: AppColors.error),
+                              ),
+                            ),
+                          )
+                        : _tests.isEmpty
+                            ? Padding(
+                                padding: const EdgeInsets.all(36),
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      Icons.quiz_outlined,
+                                      size: 52,
+                                      color: AppColors.textMuted.withOpacity(0.4),
+                                    ),
+                                    const SizedBox(height: 12),
+                                    const Text(
+                                      'No published tests found',
+                                      style: TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w800,
+                                        color: AppColors.textPrimary,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    const Text(
+                                      'Create and publish a test first from your dashboard.',
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        color: AppColors.textSecondary,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              )
+                            : ListView.separated(
+                                padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+                                shrinkWrap: true,
+                                itemCount: _tests.length,
+                                separatorBuilder: (_, __) => const SizedBox(height: 10),
+                                itemBuilder: (ctx, index) {
+                                  final test = _tests[index];
+                                  final divStr = (test.division != null &&
+                                          test.division!.isNotEmpty &&
+                                          test.division!.toUpperCase() != 'ALL')
+                                      ? '-${test.division}'
+                                      : '';
+                                  return Container(
+                                    decoration: BoxDecoration(
+                                      color: Colors.white.withOpacity(0.9),
+                                      borderRadius: BorderRadius.circular(16),
+                                      border: Border.all(
+                                        color: AppColors.primary.withOpacity(0.18),
+                                      ),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: Colors.black.withOpacity(0.03),
+                                          blurRadius: 8,
+                                          offset: const Offset(0, 2),
+                                        ),
+                                      ],
+                                    ),
+                                    child: ListTile(
+                                      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                                      leading: Container(
+                                        padding: const EdgeInsets.all(10),
+                                        decoration: BoxDecoration(
+                                          color: AppColors.primary.withOpacity(0.1),
+                                          borderRadius: BorderRadius.circular(12),
+                                        ),
+                                        child: const Icon(
+                                          Icons.assignment_outlined,
+                                          color: AppColors.primary,
+                                          size: 22,
+                                        ),
+                                      ),
+                                      title: Text(
+                                        test.subject,
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.w900,
+                                          fontSize: 15,
+                                          color: AppColors.textPrimary,
+                                        ),
+                                      ),
+                                      subtitle: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          const SizedBox(height: 2),
+                                          Text(
+                                            test.topic,
+                                            style: const TextStyle(
+                                              fontSize: 12.5,
+                                              color: AppColors.textSecondary,
+                                            ),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                          const SizedBox(height: 4),
+                                          Row(
+                                            children: [
+                                              Container(
+                                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                                                decoration: BoxDecoration(
+                                                  color: AppColors.primary.withOpacity(0.1),
+                                                  borderRadius: BorderRadius.circular(6),
+                                                ),
+                                                child: Text(
+                                                  'Std ${test.studentClass}$divStr',
+                                                  style: const TextStyle(
+                                                    fontSize: 10.5,
+                                                    fontWeight: FontWeight.w700,
+                                                    color: AppColors.primaryDark,
+                                                  ),
+                                                ),
+                                              ),
+                                              const SizedBox(width: 6),
+                                              Text(
+                                                '⏱️ ${test.duration}m',
+                                                style: const TextStyle(
+                                                  fontSize: 11,
+                                                  color: AppColors.textMuted,
+                                                  fontWeight: FontWeight.w600,
+                                                ),
+                                              ),
+                                              if (test.testCode != null) ...[
+                                                const SizedBox(width: 6),
+                                                Text(
+                                                  '• ${test.testCode}',
+                                                  style: const TextStyle(
+                                                    fontSize: 11,
+                                                    color: AppColors.textMuted,
+                                                    fontWeight: FontWeight.w700,
+                                                  ),
+                                                ),
+                                              ],
+                                            ],
+                                          ),
+                                        ],
+                                      ),
+                                      trailing: ElevatedButton.icon(
+                                        onPressed: () => widget.onSelectTest(test),
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: AppColors.primary,
+                                          foregroundColor: Colors.white,
+                                          elevation: 0,
+                                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(10),
+                                          ),
+                                        ),
+                                        icon: const Icon(Icons.send_rounded, size: 14),
+                                        label: const Text(
+                                          'Send',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w800,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class RoundedRectangleAppBorder extends RoundedRectangleBorder {
   const RoundedRectangleAppBorder({super.borderRadius});
 }
+

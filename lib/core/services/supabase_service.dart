@@ -14,6 +14,7 @@ import 'package:mcq_test_app/models/performance_aggregate.dart';
 import 'package:mcq_test_app/models/assigned_teacher.dart';
 import 'package:mcq_test_app/models/chat_conversation.dart';
 import 'package:mcq_test_app/models/chat_message.dart';
+import 'package:mcq_test_app/models/chat_test_card.dart';
 
 class SupabaseService {
   static final SupabaseService _instance = SupabaseService._internal();
@@ -736,6 +737,7 @@ class SupabaseService {
     required String temporaryPassword,
     required List<String> standards,
     required List<String> divisions,
+    Map<String, List<String>>? standardDivisions,
     required List<String> mediums, // ['Gujarati', 'English'] or ['Both']
     required List<String> subjects,
     String institution = 'Sharda Mandir',
@@ -748,14 +750,18 @@ class SupabaseService {
     final isAcc = normInst.contains('acc');
     final canonicalInstitution = isAcc ? 'Tuition ACC' : 'Sharda Mandir';
 
+    final allDivsToCheck = standardDivisions != null
+        ? standardDivisions.values.expand((v) => v).toSet()
+        : divisions;
+
     if (isAcc) {
-      for (final d in divisions) {
+      for (final d in allDivsToCheck) {
         if (d.trim().toUpperCase() != 'ACC') {
           throw 'Invalid division "$d" for Tuition ACC. Only "ACC" is allowed.';
         }
       }
     } else {
-      for (final d in divisions) {
+      for (final d in allDivsToCheck) {
         final upper = d.trim().toUpperCase();
         if (upper != 'A' && upper != 'B' && upper != 'C') {
           throw 'Invalid division "$d" for Sharda Mandir. Only "A", "B", and "C" are allowed.';
@@ -775,6 +781,7 @@ class SupabaseService {
           'password': temporaryPassword,
           'standards': standards,
           'divisions': divisions,
+          if (standardDivisions != null) 'standardDivisions': standardDivisions,
           'mediums': mediums,
           'subjects': subjects,
           'institution': institution,
@@ -904,7 +911,10 @@ class SupabaseService {
 
     final assignments = <Map<String, dynamic>>[];
     for (var std in standards) {
-      for (var div in divisions) {
+      final stdDivs = (standardDivisions != null && standardDivisions.containsKey(std))
+          ? standardDivisions[std]!
+          : divisions;
+      for (var div in stdDivs) {
         for (var med in targetMediums) {
           for (var sub in subjects) {
             assignments.add({
@@ -931,6 +941,7 @@ class SupabaseService {
     required String name,
     required List<String> standards,
     required List<String> divisions,
+    Map<String, List<String>>? standardDivisions,
     required List<String> mediums,
     required List<String> subjects,
     String institution = 'Sharda Mandir',
@@ -941,14 +952,18 @@ class SupabaseService {
     final isAcc = normInst.contains('acc');
     final canonicalInstitution = isAcc ? 'Tuition ACC' : 'Sharda Mandir';
 
+    final allDivsToCheck = standardDivisions != null
+        ? standardDivisions.values.expand((v) => v).toSet()
+        : divisions;
+
     if (isAcc) {
-      for (final d in divisions) {
+      for (final d in allDivsToCheck) {
         if (d.trim().toUpperCase() != 'ACC') {
           throw 'Invalid division "$d" for Tuition ACC. Only "ACC" is allowed.';
         }
       }
     } else {
-      for (final d in divisions) {
+      for (final d in allDivsToCheck) {
         final upper = d.trim().toUpperCase();
         if (upper != 'A' && upper != 'B' && upper != 'C') {
           throw 'Invalid division "$d" for Sharda Mandir. Only "A", "B", and "C" are allowed.';
@@ -977,7 +992,10 @@ class SupabaseService {
 
     final assignments = <Map<String, dynamic>>[];
     for (var std in standards) {
-      for (var div in divisions) {
+      final stdDivs = (standardDivisions != null && standardDivisions.containsKey(std))
+          ? standardDivisions[std]!
+          : divisions;
+      for (var div in stdDivs) {
         for (var med in targetMediums) {
           for (var sub in subjects) {
             assignments.add({
@@ -1205,6 +1223,22 @@ class SupabaseService {
     }
   }
 
+  Future<Test?> getTestById(String testId) async {
+    try {
+      final response = await supabase
+          .from('tests')
+          .select()
+          .eq('id', testId)
+          .maybeSingle();
+
+      if (response == null) return null;
+      return Test.fromMap(response);
+    } catch (e) {
+      debugPrint('Error getting test by ID $testId: $e');
+      return null;
+    }
+  }
+
   Future<bool> hasAttemptedTest(String testId) async {
     final userId = currentUser?.id;
     if (userId == null) return false;
@@ -1321,6 +1355,143 @@ class SupabaseService {
     } catch (e) {
       debugPrint('Error getting student attempts by ID: $e');
       return [];
+    }
+  }
+
+  /// Calculates real average scores grouped by standard and medium for the Admin Dashboard.
+  Future<Map<String, dynamic>> getAdminPerformanceAnalytics({
+    List<AppUser>? cachedStudents,
+  }) async {
+    try {
+      // 1. Fetch total questions per test from questions table
+      final Map<String, int> questionCounts = {};
+      try {
+        final qRes = await supabase.from('questions').select('test_id');
+        for (final q in (qRes as List)) {
+          final tId = q['test_id']?.toString() ?? '';
+          if (tId.isNotEmpty) {
+            questionCounts[tId] = (questionCounts[tId] ?? 0) + 1;
+          }
+        }
+      } catch (e) {
+        debugPrint('Notice: Error loading question counts for performance analytics: $e');
+      }
+
+      // 2. Fetch attempts with test information
+      List<dynamic> attemptsList = [];
+      try {
+        final res = await supabase
+            .from('attempts')
+            .select('id, score, test_id, student_id, tests(class, medium)');
+        attemptsList = res as List;
+      } catch (e1) {
+        debugPrint('Direct attempts+tests query error: $e1, falling back to raw attempts');
+        try {
+          final resFallback = await supabase.from('attempts').select();
+          attemptsList = resFallback as List;
+        } catch (e2) {
+          debugPrint('Raw attempts fallback error: $e2');
+          attemptsList = [];
+        }
+      }
+
+      // 3. Map students for fallback class & medium lookup
+      final Map<String, AppUser> studentMap = {};
+      if (cachedStudents != null) {
+        for (final s in cachedStudents) {
+          studentMap[s.id] = s;
+        }
+      }
+
+      // 4. Group scores by standard & medium
+      final groups = <String, List<double>>{
+        'Std 12|English': [],
+        'Std 12|Gujarati': [],
+        'Std 11|English': [],
+        'Std 11|Gujarati': [],
+      };
+
+      final allPercentages = <double>[];
+
+      for (final att in attemptsList) {
+        final score = (att['score'] as num?)?.toDouble() ?? 0.0;
+        final testId = att['test_id']?.toString() ?? '';
+        final studentId = att['student_id']?.toString() ?? '';
+        final testData = att['tests'] is Map ? att['tests'] as Map : null;
+        final student = studentMap[studentId];
+
+        // Total questions for this test
+        final totalQ = questionCounts[testId] ?? 0;
+        final double pct = totalQ > 0
+            ? ((score / totalQ) * 100.0).clamp(0.0, 100.0)
+            : (score > 20 ? score.clamp(0.0, 100.0) : (score > 0 ? 100.0 : 0.0));
+
+        allPercentages.add(pct);
+
+        // Standard: e.g. '11', '12' -> 'Std 11', 'Std 12'
+        final rawClass = (testData?['class'] ?? student?.studentClass ?? '12').toString();
+        final match = RegExp(r'\d+').firstMatch(rawClass);
+        final stdStr = match != null ? 'Std ${match.group(0)}' : 'Std 12';
+
+        // Medium: 'English' or 'Gujarati'
+        final rawMed = (testData?['medium'] ?? student?.medium ?? 'English').toString().trim().toLowerCase();
+        final medStr = rawMed.contains('guj') ? 'Gujarati' : 'English';
+
+        final key = '$stdStr|$medStr';
+        groups.putIfAbsent(key, () => []).add(pct);
+      }
+
+      final double overallAvg = allPercentages.isNotEmpty
+          ? allPercentages.reduce((a, b) => a + b) / allPercentages.length
+          : 0.0;
+
+      final canonicalOrder = [
+        'Std 12|English',
+        'Std 12|Gujarati',
+        'Std 11|English',
+        'Std 11|Gujarati',
+      ];
+
+      final orderedKeys = <String>[
+        ...canonicalOrder,
+        ...groups.keys.where((k) => !canonicalOrder.contains(k)),
+      ];
+
+      final performanceByGroup = orderedKeys.map((key) {
+        final parts = key.split('|');
+        final std = parts[0];
+        final med = parts.length > 1 ? parts[1] : 'English';
+        final scores = groups[key] ?? [];
+        final avg = scores.isNotEmpty
+            ? scores.reduce((a, b) => a + b) / scores.length
+            : 0.0;
+
+        return {
+          'standard': std,
+          'medium': med,
+          'average': double.parse(avg.toStringAsFixed(1)),
+          'fraction': avg / 100.0,
+          'attemptsCount': scores.length,
+        };
+      }).toList();
+
+      return {
+        'totalAttempts': attemptsList.length,
+        'averageScore': double.parse(overallAvg.toStringAsFixed(1)),
+        'performanceByGroup': performanceByGroup,
+      };
+    } catch (e) {
+      debugPrint('Error in getAdminPerformanceAnalytics: $e');
+      return {
+        'totalAttempts': 0,
+        'averageScore': 0.0,
+        'performanceByGroup': [
+          {'standard': 'Std 12', 'medium': 'English', 'average': 0.0, 'fraction': 0.0, 'attemptsCount': 0},
+          {'standard': 'Std 12', 'medium': 'Gujarati', 'average': 0.0, 'fraction': 0.0, 'attemptsCount': 0},
+          {'standard': 'Std 11', 'medium': 'English', 'average': 0.0, 'fraction': 0.0, 'attemptsCount': 0},
+          {'standard': 'Std 11', 'medium': 'Gujarati', 'average': 0.0, 'fraction': 0.0, 'attemptsCount': 0},
+        ],
+      };
     }
   }
 
@@ -1925,6 +2096,80 @@ class SupabaseService {
       debugPrint('Error sending chat message: $e');
       rethrow;
     }
+  }
+
+  /// Shares an interactive test card into a specific conversation
+  Future<ChatMessage> shareTestToConversation({
+    required String conversationId,
+    required Test test,
+  }) async {
+    final cardData = ChatTestCardData.fromTest(test);
+    return sendMessage(
+      conversationId: conversationId,
+      messageText: cardData.toMessageText(),
+    );
+  }
+
+  /// Broadcasts an interactive test card to all authorized students matching the test's class and division
+  Future<int> broadcastTestToClass({
+    required Test test,
+  }) async {
+    final user = currentUser;
+    if (user == null) throw 'User session expired. Please log in.';
+
+    final authorizedStudents = await getAuthorizedStudentsForCurrentTeacher();
+    if (authorizedStudents.isEmpty) return 0;
+
+    final testStd = test.studentClass.trim();
+    final testDiv = test.division?.trim().toUpperCase() ?? '';
+
+    // Filter students matching the target standard & division
+    final matchingStudents = authorizedStudents.where((student) {
+      final sStd = (student.studentClass ?? '').trim();
+      final sDiv = (student.division ?? '').trim().toUpperCase();
+
+      // Standard match (comparing digits or exact string)
+      final testDigit = RegExp(r'\d+').firstMatch(testStd)?.group(0);
+      final studentDigit = RegExp(r'\d+').firstMatch(sStd)?.group(0);
+      final isClassMatch = (testDigit != null && studentDigit != null)
+          ? (testDigit == studentDigit)
+          : (testStd.toLowerCase() == sStd.toLowerCase());
+
+      if (!isClassMatch) return false;
+
+      // Division match (if test specifies a division that is not ALL/BOTH)
+      if (testDiv.isNotEmpty && testDiv != 'ALL' && testDiv != 'BOTH') {
+        if (sDiv.isNotEmpty && sDiv != testDiv) {
+          return false;
+        }
+      }
+
+      return true;
+    }).toList();
+
+    if (matchingStudents.isEmpty) return 0;
+
+    int sentCount = 0;
+    final cardData = ChatTestCardData.fromTest(test);
+    final messageText = cardData.toMessageText();
+
+    for (final student in matchingStudents) {
+      try {
+        final conversationId = await getOrCreateConversation(
+          teacherId: user.id,
+          studentId: student.id,
+        );
+        await sendMessage(
+          conversationId: conversationId,
+          messageText: messageText,
+        );
+        sentCount++;
+      } catch (err) {
+        debugPrint('Error sending test card to student ${student.id}: $err');
+      }
+    }
+
+    return sentCount;
   }
 
   /// Marks all unread incoming messages in a conversation as read
