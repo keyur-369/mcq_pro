@@ -68,24 +68,33 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
           return;
         }
 
-        if (profile.mustChangePassword) {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (_) => ChangePasswordScreen(user: profile)),
-          );
-          return;
-        }
-
         if (profile.isAdmin) {
+          // If admin profile had must_change_password set, auto-clear it
+          if (profile.mustChangePassword) {
+            try {
+              await SupabaseService().supabase.from('users').update({
+                'must_change_password': false,
+                'temporary_password': null,
+              }).eq('id', user.id);
+            } catch (_) {}
+          }
           Navigator.pushReplacement(
             context,
             MaterialPageRoute(builder: (_) => const AdminDashboard()),
           );
         } else if (profile.isTeacher) {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (_) => TeacherDashboard(user: profile)),
-          );
+          // First-time teacher login requires password change before dashboard access
+          if (profile.mustChangePassword) {
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(builder: (_) => ChangePasswordScreen(user: profile)),
+            );
+          } else {
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(builder: (_) => TeacherDashboard(user: profile)),
+            );
+          }
         } else if (profile.isStudent) {
           Navigator.pushReplacement(
             context,

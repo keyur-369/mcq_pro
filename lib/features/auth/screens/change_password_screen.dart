@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_spinkit/flutter_spinkit.dart';
 import 'package:mcq_test_app/core/constants/app_colors.dart';
 import 'package:mcq_test_app/core/services/supabase_service.dart';
@@ -81,13 +82,14 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
         );
 
         // 2. Redirect to the appropriate dashboard
+        final updatedUser = widget.user.copyWith(mustChangePassword: false);
         Widget destination;
-        if (widget.user.isAdmin) {
+        if (updatedUser.isAdmin) {
           destination = const AdminDashboard();
-        } else if (widget.user.isTeacher) {
-          destination = TeacherDashboard(user: widget.user);
+        } else if (updatedUser.isTeacher) {
+          destination = TeacherDashboard(user: updatedUser);
         } else {
-          destination = StudentDashboard(user: widget.user);
+          destination = StudentDashboard(user: updatedUser);
         }
 
         Navigator.pushReplacement(
@@ -137,6 +139,180 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
     }
   }
 
+  Widget _buildUserIdentityCard() {
+    final displayId = widget.user.email.isNotEmpty ? widget.user.email : widget.user.id;
+    final userName = widget.user.name?.trim();
+    final role = widget.user.role.toUpperCase();
+
+    // Extra details (Class/Div for student, Institution for teacher)
+    final details = <String>[];
+    if (widget.user.rollNo != null && widget.user.rollNo!.trim().isNotEmpty) {
+      details.add('Roll No: ${widget.user.rollNo}');
+    }
+    if (widget.user.studentClass != null && widget.user.studentClass!.trim().isNotEmpty) {
+      final div = widget.user.division != null && widget.user.division!.trim().isNotEmpty
+          ? ' (${widget.user.division})'
+          : '';
+      details.add('Class ${widget.user.studentClass}$div');
+    }
+    if (widget.user.institution != null && widget.user.institution!.trim().isNotEmpty) {
+      details.add(widget.user.institution!);
+    }
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: AppColors.primary.withOpacity(0.20),
+          width: 1.2,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.primary.withOpacity(0.08),
+            blurRadius: 16,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  AppColors.primary,
+                  Color.lerp(AppColors.primary, Colors.black, 0.25)!,
+                ],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(12),
+              boxShadow: [
+                BoxShadow(
+                  color: AppColors.primary.withOpacity(0.28),
+                  blurRadius: 8,
+                  offset: const Offset(0, 3),
+                ),
+              ],
+            ),
+            child: const Icon(
+              Icons.badge_rounded,
+              color: Colors.white,
+              size: 24,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Wrap(
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: 6,
+                  runSpacing: 2,
+                  children: [
+                    Text(
+                      'ACCOUNT',
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.7,
+                        color: AppColors.primary.withOpacity(0.9),
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                      decoration: BoxDecoration(
+                        color: AppColors.primarySoft,
+                        borderRadius: BorderRadius.circular(5),
+                        border: Border.all(
+                          color: AppColors.primary.withOpacity(0.25),
+                          width: 0.8,
+                        ),
+                      ),
+                      child: Text(
+                        role,
+                        style: const TextStyle(
+                          fontSize: 9,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.primary,
+                          letterSpacing: 0.4,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  displayId,
+                  style: const TextStyle(
+                    fontSize: 14.5,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textPrimary,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+                if (userName != null && userName.isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    userName,
+                    style: const TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.textSecondary,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+                if (details.isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    details.join(' • '),
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w500,
+                      color: AppColors.textSecondary.withOpacity(0.85),
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ],
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.copy_rounded, size: 18, color: AppColors.textSecondary),
+            tooltip: 'Copy ID',
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+            visualDensity: VisualDensity.compact,
+            onPressed: () {
+              Clipboard.setData(ClipboardData(text: displayId));
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Row(
+                    children: [
+                      const Icon(Icons.check_circle_outline_rounded, color: Colors.white, size: 18),
+                      const SizedBox(width: 8),
+                      Expanded(child: Text('Copied "$displayId" to clipboard')),
+                    ],
+                  ),
+                  duration: const Duration(seconds: 2),
+                  behavior: SnackBarBehavior.floating,
+                ),
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -175,7 +351,9 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
                             height: 1.4,
                           ),
                     ),
-                    const SizedBox(height: 30),
+                    const SizedBox(height: 20),
+                    _buildUserIdentityCard(),
+                    const SizedBox(height: 20),
                     AppCard(
                       padding: const EdgeInsets.all(24),
                       child: Column(

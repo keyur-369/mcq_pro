@@ -369,12 +369,11 @@ class _AdminDashboardState extends State<AdminDashboard>
         padding: const EdgeInsets.all(4),
         child: TabBar(
           controller: _tabController,
-          isScrollable: true,
-          physics: const BouncingScrollPhysics(),
-          tabAlignment: TabAlignment.start,
-          padding: const EdgeInsets.symmetric(horizontal: 4),
+          isScrollable: false,
+          tabAlignment: TabAlignment.fill,
           dividerColor: Colors.transparent,
           indicatorSize: TabBarIndicatorSize.tab,
+          indicatorPadding: const EdgeInsets.symmetric(horizontal: 3, vertical: 2),
           indicator: BoxDecoration(
             gradient: LinearGradient(
               begin: Alignment.topLeft,
@@ -408,7 +407,7 @@ class _AdminDashboardState extends State<AdminDashboard>
             fontWeight: FontWeight.w600,
             fontSize: 13,
           ),
-          labelPadding: const EdgeInsets.symmetric(horizontal: 3),
+          labelPadding: EdgeInsets.zero,
           overlayColor: WidgetStateProperty.all(Colors.transparent),
           tabs: const [
             _PillTab(icon: Icons.analytics_rounded, label: 'Analytics'),
@@ -757,13 +756,20 @@ class _PillTab extends StatelessWidget {
     return Tab(
       height: 40,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 4),
         child: Row(
           mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(icon, size: 16),
-            const SizedBox(width: 5),
-            Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
+            const SizedBox(width: 6),
+            Flexible(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
           ],
         ),
       ),
