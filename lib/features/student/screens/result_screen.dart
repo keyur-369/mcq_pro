@@ -1,3 +1,5 @@
+import 'dart:convert';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:mcq_test_app/core/constants/app_colors.dart';
 import 'package:mcq_test_app/core/services/pdf_export_service.dart';
@@ -6,6 +8,7 @@ import 'package:mcq_test_app/core/widgets/animated_page.dart';
 import 'package:mcq_test_app/core/widgets/app_card.dart';
 import 'package:mcq_test_app/core/widgets/app_gradient_background.dart';
 import 'package:mcq_test_app/core/widgets/app_section_title.dart';
+import 'package:mcq_test_app/core/widgets/formula_text.dart';
 import 'package:mcq_test_app/models/app_user.dart';
 import 'package:mcq_test_app/models/question.dart';
 import 'package:mcq_test_app/models/test.dart';
@@ -565,7 +568,7 @@ class _ResultScreenState extends State<ResultScreen> {
             ],
           ),
           const SizedBox(height: 14),
-          Text(
+          FormulaText(
             question.questionText,
             style: const TextStyle(
               fontSize: 15.5,
@@ -574,6 +577,8 @@ class _ResultScreenState extends State<ResultScreen> {
               height: 1.45,
             ),
           ),
+          if (question.imageUrl != null && question.imageUrl!.trim().isNotEmpty)
+            _buildQuestionImage(question.imageUrl!),
           const SizedBox(height: 18),
           _buildOptionRow('A', question.optionA, question.correctAnswer, userAnswer),
           const SizedBox(height: 8),
@@ -609,7 +614,7 @@ class _ResultScreenState extends State<ResultScreen> {
                     ],
                   ),
                   const SizedBox(height: 6),
-                  Text(
+                  FormulaText(
                     question.explanation,
                     style: const TextStyle(
                       color: AppColors.textSecondary,
@@ -685,7 +690,7 @@ class _ResultScreenState extends State<ResultScreen> {
           ),
           const SizedBox(width: 10),
           Expanded(
-            child: Text(
+            child: FormulaText(
               text,
               style: TextStyle(
                 color: textColor,
@@ -702,6 +707,50 @@ class _ResultScreenState extends State<ResultScreen> {
           ],
         ],
       ),
+    );
+  }
+
+  Widget _buildQuestionImage(String imageSource) {
+    Widget imgWidget;
+    final trimmed = imageSource.trim();
+    if (trimmed.startsWith('data:image')) {
+      final commaIdx = trimmed.indexOf(',');
+      final b64 = commaIdx != -1 ? trimmed.substring(commaIdx + 1) : trimmed;
+      try {
+        final bytes = base64Decode(b64.replaceAll(RegExp(r'\s+'), ''));
+        imgWidget = Image.memory(bytes, fit: BoxFit.contain);
+      } catch (e) {
+        return const SizedBox.shrink();
+      }
+    } else if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+      imgWidget = CachedNetworkImage(
+        imageUrl: trimmed,
+        fit: BoxFit.contain,
+        placeholder: (_, __) => const Center(child: CircularProgressIndicator(strokeWidth: 2)),
+        errorWidget: (_, __, ___) => const Icon(Icons.broken_image_rounded, color: AppColors.textMuted),
+      );
+    } else if (trimmed.length > 50 && !trimmed.contains(' ')) {
+      try {
+        final bytes = base64Decode(trimmed);
+        imgWidget = Image.memory(bytes, fit: BoxFit.contain);
+      } catch (_) {
+        return const SizedBox.shrink();
+      }
+    } else {
+      return const SizedBox.shrink();
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(top: 12),
+      constraints: const BoxConstraints(maxHeight: 200),
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Center(child: imgWidget),
     );
   }
 }

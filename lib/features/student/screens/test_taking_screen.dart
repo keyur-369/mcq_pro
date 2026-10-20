@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:convert';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:mcq_test_app/core/constants/app_colors.dart';
 import 'package:mcq_test_app/core/services/supabase_service.dart';
@@ -351,7 +353,8 @@ class _TestTakingScreenState extends State<TestTakingScreen>
                                 ),
                               ),
                             ),
-                            const SizedBox(height: 32),
+                            _buildQuestionImage(_questions[_currentQuestionIndex].imageUrl),
+                            const SizedBox(height: 24),
                             ..._buildOptions(
                                 _questions[_currentQuestionIndex]),
                           ],
@@ -525,5 +528,50 @@ class _TestTakingScreenState extends State<TestTakingScreen>
         ),
       );
     }).toList();
+  }
+
+  Widget _buildQuestionImage(String? imageSource) {
+    if (imageSource == null || imageSource.trim().isEmpty) return const SizedBox.shrink();
+    Widget imgWidget;
+    final trimmed = imageSource.trim();
+    if (trimmed.startsWith('data:image')) {
+      final commaIdx = trimmed.indexOf(',');
+      final b64 = commaIdx != -1 ? trimmed.substring(commaIdx + 1) : trimmed;
+      try {
+        final bytes = base64Decode(b64.replaceAll(RegExp(r'\s+'), ''));
+        imgWidget = Image.memory(bytes, fit: BoxFit.contain);
+      } catch (e) {
+        return const SizedBox.shrink();
+      }
+    } else if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+      imgWidget = CachedNetworkImage(
+        imageUrl: trimmed,
+        fit: BoxFit.contain,
+        placeholder: (_, __) => const Center(child: CircularProgressIndicator(strokeWidth: 2)),
+        errorWidget: (_, __, ___) => const Icon(Icons.broken_image_rounded, color: AppColors.textMuted),
+      );
+    } else if (trimmed.length > 50 && !trimmed.contains(' ')) {
+      try {
+        final bytes = base64Decode(trimmed);
+        imgWidget = Image.memory(bytes, fit: BoxFit.contain);
+      } catch (_) {
+        return const SizedBox.shrink();
+      }
+    } else {
+      return const SizedBox.shrink();
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(top: 16),
+      constraints: const BoxConstraints(maxHeight: 220),
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Center(child: imgWidget),
+    );
   }
 }

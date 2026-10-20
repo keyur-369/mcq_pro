@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:mcq_test_app/core/utils/scientific_formatter.dart';
 
 /// Renders chemistry/math formatted text with proper sub/superscripts.
 ///
-/// Supported syntax (as Gemini returns it):
+/// Supported syntax:
+///   H2SO4       →  H₂SO₄     (auto chemical formula subscripts)
+///   sp2, sp3    →  sp², sp³  (auto hybridization superscripts)
 ///   C_2H_6O_2   →  C₂H₆O₂   (underscore = subscript)
 ///   x^2         →  x²        (caret = superscript)
 ///   mol^{-1}    →  mol⁻¹     (braced superscript)
@@ -17,7 +20,8 @@ class FormulaText extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final base = style ?? DefaultTextStyle.of(context).style;
-    final spans = _parse(text, base);
+    final formatted = ScientificFormatter.format(text);
+    final spans = _parse(formatted, base);
     return RichText(text: TextSpan(children: spans));
   }
 

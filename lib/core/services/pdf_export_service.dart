@@ -1,11 +1,14 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 import 'package:syncfusion_flutter_pdf/pdf.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:mcq_test_app/core/utils/scientific_formatter.dart';
 import 'package:mcq_test_app/models/question.dart';
 import 'package:mcq_test_app/models/test.dart';
 
@@ -36,18 +39,53 @@ class PdfExportService {
     }
   }
 
+  /// Loads image from base64 data URI, raw base64, or network HTTP URL for canvas rendering
+  static Future<ui.Image?> _loadCanvasImage(String? imageSource) async {
+    if (imageSource == null || imageSource.trim().isEmpty) return null;
+    try {
+      Uint8List bytes;
+      final trimmed = imageSource.trim();
+      if (trimmed.startsWith('data:image')) {
+        final commaIdx = trimmed.indexOf(',');
+        final b64 = commaIdx != -1 ? trimmed.substring(commaIdx + 1) : trimmed;
+        bytes = base64Decode(b64.replaceAll(RegExp(r'\s+'), ''));
+      } else if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+        final res = await http.get(Uri.parse(trimmed));
+        if (res.statusCode == 200) {
+          bytes = res.bodyBytes;
+        } else {
+          return null;
+        }
+      } else if (trimmed.length > 50 && !trimmed.contains(' ')) {
+        bytes = base64Decode(trimmed);
+      } else {
+        return null;
+      }
+      final codec = await ui.instantiateImageCodec(bytes);
+      final frame = await codec.getNextFrame();
+      return frame.image;
+    } catch (e) {
+      debugPrint('Failed to load canvas question diagram: $e');
+      return null;
+    }
+  }
+
   /// Cleans invisible characters, zero-width marks, and normalizes rare typography
-  /// while preserving 100% of Gujarati characters, English, numbers, and symbols.
+  /// while PRESERVING Unicode subscripts (H₂SO₄), superscripts (sp², sp³), chemistry arrows (→, ⇌),
+  /// Gujarati characters, English, numbers, and symbols.
   static String _cleanText(String? input) {
     if (input == null || input.isEmpty) return '';
 
-    return input
+    // Step 1: Pre-format scientific expressions (H2SO4 -> H₂SO₄, sp2 -> sp², etc.)
+    final formatted = ScientificFormatter.format(input);
+
+    return formatted
         // Remove directional marks, zero-width spaces, BOM, soft hyphens
         .replaceAll(RegExp(r'[\u200B-\u200F\uFEFF\u00AD\u202A-\u202E\u2060]'), '')
         // Single & double quotes
         .replaceAll(RegExp(r'[\u2018\u2019\u201A\u201B\u02BC\u02B9]'), "'")
         .replaceAll(RegExp(r'[\u201C\u201D\u201E\u201F]'), '"')
-        // Dashes and hyphens
+        // Dashes and hyphens (preserving standard minus for math)
         .replaceAll(RegExp(r'[\u2010-\u2015\u2212]'), '-')
         // Bullets & dots
         .replaceAll(RegExp(r'[\u2022\u2023\u25E6\u2043\u2219]'), '-')
@@ -67,37 +105,6 @@ class PdfExportService {
         .replaceAll('\u00B1', '+/-')
         .replaceAll('\u00B0', '°')
         .replaceAll('\u221A', 'sqrt')
-        // Superscripts
-        .replaceAll('\u00B9', '^1')
-        .replaceAll('\u00B2', '^2')
-        .replaceAll('\u00B3', '^3')
-        .replaceAll('\u2070', '^0')
-        .replaceAll('\u2074', '^4')
-        .replaceAll('\u2075', '^5')
-        .replaceAll('\u2076', '^6')
-        .replaceAll('\u2077', '^7')
-        .replaceAll('\u2078', '^8')
-        .replaceAll('\u2079', '^9')
-        .replaceAll('\u207A', '+')
-        .replaceAll('\u207B', '-')
-        // Subscripts
-        .replaceAll('\u2080', '0')
-        .replaceAll('\u2081', '1')
-        .replaceAll('\u2082', '2')
-        .replaceAll('\u2083', '3')
-        .replaceAll('\u2084', '4')
-        .replaceAll('\u2085', '5')
-        .replaceAll('\u2086', '6')
-        .replaceAll('\u2087', '7')
-        .replaceAll('\u2088', '8')
-        .replaceAll('\u2089', '9')
-        .replaceAll('\u208A', '+')
-        .replaceAll('\u208B', '-')
-        // Chemistry & physics arrows
-        .replaceAll('\u2192', '->')
-        .replaceAll('\u21CC', '<=>')
-        .replaceAll('\u03C0', 'pi')
-        .replaceAll('\u00B5', 'u')
         .trim();
   }
 
@@ -247,15 +254,18 @@ class PdfExportService {
     document.pageSettings.margins.all = 36;
 
     final footer = PdfPageTemplateElement(const Rect.fromLTWH(0, 0, 540, 20));
-    final smallFont = PdfStandardFont(PdfFontFamily.helvetica, 8);
-    final textSecondary = PdfColor(100, 116, 139);
-    footer.graphics.drawString(
-      'MCQ Pro - Master Test Archive  |  Standard ${test.studentClass} ${test.medium.toUpperCase()}',
-      smallFont,
+    final numFont = PdfStandardFont(PdfFontFamily.helvetica, 9, style: PdfFontStyle.bold);
+    final textSecondary = PdfColor(70, 80, 95);
+    final pageNumber = PdfPageNumberField(font: numFont, brush: PdfSolidBrush(textSecondary));
+    final composite = PdfCompositeField(
+      font: numFont,
       brush: PdfSolidBrush(textSecondary),
-      bounds: const Rect.fromLTWH(0, 0, 540, 15),
-      format: PdfStringFormat(alignment: PdfTextAlignment.center),
+      text: '{0}',
+      fields: [pageNumber],
     );
+    composite.bounds = const Rect.fromLTWH(0, 4, 540, 15);
+    composite.stringFormat = PdfStringFormat(alignment: PdfTextAlignment.center);
+    composite.draw(footer.graphics, const Offset(0, 0));
     document.template.bottom = footer;
 
     var page = document.pages.add();
@@ -289,6 +299,10 @@ class PdfExportService {
       if (y + cardBlock.height > clientHeight - 20) {
         page = document.pages.add();
         y = 10;
+        final topBanner = await _renderRunningExamHeader(test: test, width: clientWidth);
+        final bannerBitmap = PdfBitmap(topBanner.pngBytes);
+        page.graphics.drawImage(bannerBitmap, Rect.fromLTWH(0, y, clientWidth, topBanner.height));
+        y += topBanner.height + 8;
       }
 
       final cardBitmap = PdfBitmap(cardBlock.pngBytes);
@@ -548,12 +562,12 @@ class PdfExportService {
       text: TextSpan(
         children: [
           TextSpan(
-            text: 'Q${questionIndex + 1}. ',
+            text: '${questionIndex + 1}. ',
             style: const TextStyle(
               fontFamily: _fontFamily,
               fontFamilyFallback: _fontFallback,
               fontSize: 10.5,
-              fontWeight: FontWeight.w700,
+              fontWeight: FontWeight.w800,
               color: Color(0xFF0F172A),
             ),
           ),
@@ -577,46 +591,46 @@ class PdfExportService {
     badgePainter.paint(canvas, Offset(width - badgePainter.width, y));
     y += (questionPainter.height > badgePainter.height ? questionPainter.height : badgePainter.height) + 6;
 
-    // Options A, B, C, D
-    final options = [
-      ('A', question.optionA),
-      ('B', question.optionB),
-      ('C', question.optionC),
-      ('D', question.optionD),
-    ];
-
-    for (final opt in options) {
-      final optPainter = TextPainter(
-        text: TextSpan(
-          children: [
-            TextSpan(
-              text: '   ${opt.$1}) ',
-              style: const TextStyle(
-                fontFamily: _fontFamily,
-                fontFamilyFallback: _fontFallback,
-                fontSize: 9.5,
-                fontWeight: FontWeight.w600,
-                color: Color(0xFF334155),
-              ),
-            ),
-            TextSpan(
-              text: _cleanText(opt.$2),
-              style: const TextStyle(
-                fontFamily: _fontFamily,
-                fontFamilyFallback: _fontFallback,
-                fontSize: 9.5,
-                color: Color(0xFF334155),
-                height: 1.35,
-              ),
-            ),
-          ],
-        ),
-        textDirection: ui.TextDirection.ltr,
-      )..layout(maxWidth: width - 10);
-
-      optPainter.paint(canvas, Offset(0, y));
-      y += optPainter.height + 4;
+    // Optional Diagram / Reaction Mechanism Image
+    if (question.imageUrl != null && question.imageUrl!.trim().isNotEmpty) {
+      final qImage = await _loadCanvasImage(question.imageUrl);
+      if (qImage != null) {
+        final imgW = qImage.width.toDouble();
+        final imgH = qImage.height.toDouble();
+        final maxW = width - 40;
+        const maxH = 150.0;
+        double renderW = imgW;
+        double renderH = imgH;
+        if (renderW > maxW) {
+          renderH = (renderH * maxW) / renderW;
+          renderW = maxW;
+        }
+        if (renderH > maxH) {
+          renderH = (renderH * maxH) / renderH;
+          renderH = maxH;
+        }
+        final imgX = (width - renderW) / 2;
+        canvas.drawImageRect(
+          qImage,
+          Rect.fromLTWH(0, 0, imgW, imgH),
+          Rect.fromLTWH(imgX, y, renderW, renderH),
+          Paint(),
+        );
+        y += renderH + 8;
+        qImage.dispose();
+      }
     }
+
+    // Adaptive Options Grid (1 row x 4 cols, 2 rows x 2 cols, or 4 rows stacked)
+    y = _renderOptionsGrid(
+      canvas: canvas,
+      startY: y,
+      width: width,
+      question: question,
+      isSolutionReport: true,
+      includeAnswerKey: false,
+      userAns: cleanAns,
+    );
     y += 4;
 
     // Selection Summary
@@ -745,6 +759,73 @@ class PdfExportService {
     canvas.scale(scale, scale);
     double y = 0;
 
+    // Top Exam Assignment Banner (as shown in standard exam papers)
+    final subjectStr = _cleanText(test.subject).toUpperCase();
+    final classStr = 'Std-${test.studentClass} (${test.medium.toUpperCase()})';
+    final topicStr = _cleanText(test.topic).toUpperCase();
+
+    final borderPaint = Paint()
+      ..color = const Color(0xFF0F172A)
+      ..strokeWidth = 1.2;
+    canvas.drawLine(Offset(0, y), Offset(width, y), borderPaint);
+    y += 5;
+
+    final bannerColW = width / 3;
+
+    final bLeft = TextPainter(
+      text: TextSpan(
+        text: subjectStr,
+        style: const TextStyle(
+          fontFamily: _fontFamily,
+          fontFamilyFallback: _fontFallback,
+          fontSize: 11,
+          fontWeight: FontWeight.w900,
+          color: Color(0xFF0F172A),
+          letterSpacing: 0.8,
+        ),
+      ),
+      textDirection: ui.TextDirection.ltr,
+    )..layout(maxWidth: bannerColW);
+    bLeft.paint(canvas, Offset(0, y));
+
+    final bCenter = TextPainter(
+      text: TextSpan(
+        text: classStr,
+        style: const TextStyle(
+          fontFamily: _fontFamily,
+          fontFamilyFallback: _fontFallback,
+          fontSize: 11,
+          fontWeight: FontWeight.w800,
+          color: Color(0xFF0F172A),
+        ),
+      ),
+      textDirection: ui.TextDirection.ltr,
+      textAlign: TextAlign.center,
+    )..layout(maxWidth: bannerColW);
+    bCenter.paint(canvas, Offset(bannerColW + (bannerColW - bCenter.width) / 2, y));
+
+    final bRight = TextPainter(
+      text: TextSpan(
+        text: topicStr.contains('ASSIGN') ? topicStr : 'ASSIGNMENT',
+        style: const TextStyle(
+          fontFamily: _fontFamily,
+          fontFamilyFallback: _fontFallback,
+          fontSize: 11,
+          fontWeight: FontWeight.w900,
+          color: Color(0xFF0F172A),
+          letterSpacing: 0.8,
+        ),
+      ),
+      textDirection: ui.TextDirection.ltr,
+      textAlign: TextAlign.right,
+    )..layout(maxWidth: bannerColW);
+    bRight.paint(canvas, Offset(width - bRight.width, y));
+
+    final bannerH = [bLeft.height, bCenter.height, bRight.height].reduce((a, b) => a > b ? a : b);
+    y += bannerH + 5;
+    canvas.drawLine(Offset(0, y), Offset(width, y), borderPaint);
+    y += 10;
+
     // Title
     final titlePainter = TextPainter(
       text: const TextSpan(
@@ -752,7 +833,7 @@ class PdfExportService {
         style: TextStyle(
           fontFamily: _fontFamily,
           fontFamilyFallback: _fontFallback,
-          fontSize: 16,
+          fontSize: 14,
           fontWeight: FontWeight.w800,
           color: Color(0xFF4F46E5),
           letterSpacing: 0.5,
@@ -867,6 +948,238 @@ class PdfExportService {
     return _RenderedBlock(pngBytes: pngData!.buffer.asUint8List(), height: y);
   }
 
+  /// Running header at the top of each test assignment page (as shown in standard exam papers)
+  static Future<_RenderedBlock> _renderRunningExamHeader({
+    required Test test,
+    required double width,
+    double scale = 2.0,
+  }) async {
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder);
+    canvas.scale(scale, scale);
+    double y = 0;
+
+    final subjectStr = _cleanText(test.subject).toUpperCase();
+    final classStr = 'Std-${test.studentClass} ${test.medium.toUpperCase()}';
+    final topicStr = _cleanText(test.topic).toUpperCase();
+
+    // Top border line
+    final borderPaint = Paint()
+      ..color = const Color(0xFF0F172A)
+      ..strokeWidth = 1.0;
+    canvas.drawLine(Offset(0, y), Offset(width, y), borderPaint);
+    y += 4;
+
+    final colWidth = width / 3;
+
+    // Left: Subject
+    final leftPainter = TextPainter(
+      text: TextSpan(
+        text: subjectStr,
+        style: const TextStyle(
+          fontFamily: _fontFamily,
+          fontFamilyFallback: _fontFallback,
+          fontSize: 10.5,
+          fontWeight: FontWeight.w900,
+          color: Color(0xFF0F172A),
+          letterSpacing: 0.6,
+        ),
+      ),
+      textDirection: ui.TextDirection.ltr,
+    )..layout(maxWidth: colWidth);
+    leftPainter.paint(canvas, Offset(0, y));
+
+    // Center: Class
+    final centerPainter = TextPainter(
+      text: TextSpan(
+        text: classStr,
+        style: const TextStyle(
+          fontFamily: _fontFamily,
+          fontFamilyFallback: _fontFallback,
+          fontSize: 10.5,
+          fontWeight: FontWeight.w800,
+          color: Color(0xFF0F172A),
+        ),
+      ),
+      textDirection: ui.TextDirection.ltr,
+      textAlign: TextAlign.center,
+    )..layout(maxWidth: colWidth);
+    centerPainter.paint(canvas, Offset(colWidth + (colWidth - centerPainter.width) / 2, y));
+
+    // Right: Assignment Title
+    final rightPainter = TextPainter(
+      text: TextSpan(
+        text: topicStr.contains('ASSIGN') ? topicStr : 'ASSIGNMENT',
+        style: const TextStyle(
+          fontFamily: _fontFamily,
+          fontFamilyFallback: _fontFallback,
+          fontSize: 10.5,
+          fontWeight: FontWeight.w900,
+          color: Color(0xFF0F172A),
+          letterSpacing: 0.6,
+        ),
+      ),
+      textDirection: ui.TextDirection.ltr,
+      textAlign: TextAlign.right,
+    )..layout(maxWidth: colWidth);
+    rightPainter.paint(canvas, Offset(width - rightPainter.width, y));
+
+    final bannerH = [leftPainter.height, centerPainter.height, rightPainter.height].reduce((a, b) => a > b ? a : b);
+    y += bannerH + 4;
+
+    // Bottom border line
+    canvas.drawLine(Offset(0, y), Offset(width, y), borderPaint);
+    y += 6;
+
+    final picture = recorder.endRecording();
+    final img = await picture.toImage((width * scale).ceil(), (y * scale).ceil());
+    final pngData = await img.toByteData(format: ui.ImageByteFormat.png);
+    img.dispose();
+
+    return _RenderedBlock(pngBytes: pngData!.buffer.asUint8List(), height: y);
+  }
+
+  /// Adaptive grid renderer for Options A, B, C, D:
+  /// - 1 row (4 columns) if short (e.g. Q43 in real exam papers)
+  /// - 2 rows (2 columns) if medium (e.g. Q44, Q45 in real exam papers)
+  /// - 4 rows (vertical) for long text
+  static double _renderOptionsGrid({
+    required Canvas canvas,
+    required double startY,
+    required double width,
+    required Question question,
+    required bool isSolutionReport,
+    required bool includeAnswerKey,
+    String? userAns,
+  }) {
+    double y = startY;
+    final options = [
+      ('A', question.optionA),
+      ('B', question.optionB),
+      ('C', question.optionC),
+      ('D', question.optionD),
+    ];
+
+    final cleanCorrect = question.correctAnswer.trim();
+    final optPainters = options.map((opt) {
+      final isCorrect = (includeAnswerKey || isSolutionReport) &&
+          (opt.$1.toUpperCase() == cleanCorrect.toUpperCase() ||
+              opt.$2.trim() == cleanCorrect);
+      final isSelectedByUser = isSolutionReport && userAns != null &&
+          (opt.$1.toUpperCase() == userAns.trim().toUpperCase() ||
+              opt.$2.trim() == userAns.trim());
+
+      Color textColor = const Color(0xFF1E293B);
+      FontWeight fontWeight = FontWeight.w500;
+      if (isCorrect) {
+        textColor = const Color(0xFF059669);
+        fontWeight = FontWeight.w700;
+      } else if (isSelectedByUser && !isCorrect) {
+        textColor = const Color(0xFFDC2626);
+        fontWeight = FontWeight.w600;
+      }
+
+      return TextPainter(
+        text: TextSpan(
+          children: [
+            TextSpan(
+              text: '(${opt.$1}) ',
+              style: TextStyle(
+                fontFamily: _fontFamily,
+                fontFamilyFallback: _fontFallback,
+                fontSize: 9.5,
+                fontWeight: isCorrect ? FontWeight.w800 : FontWeight.w700,
+                color: textColor,
+              ),
+            ),
+            TextSpan(
+              text: _cleanText(opt.$2),
+              style: TextStyle(
+                fontFamily: _fontFamily,
+                fontFamilyFallback: _fontFallback,
+                fontSize: 9.5,
+                fontWeight: fontWeight,
+                color: textColor,
+                height: 1.3,
+              ),
+            ),
+            if (isCorrect && includeAnswerKey)
+              const TextSpan(
+                text: ' [CORRECT]',
+                style: TextStyle(
+                  fontFamily: _fontFamily,
+                  fontFamilyFallback: _fontFallback,
+                  fontSize: 8.5,
+                  fontWeight: FontWeight.w800,
+                  color: Color(0xFF059669),
+                ),
+              ),
+          ],
+        ),
+        textDirection: ui.TextDirection.ltr,
+      );
+    }).toList();
+
+    // 1. Try 4-Column Layout (single horizontal line)
+    final col4W = (width - 24) / 4;
+    bool canFit4Col = true;
+    for (final p in optPainters) {
+      p.layout(maxWidth: col4W);
+      if (p.height > 22) {
+        canFit4Col = false;
+        break;
+      }
+    }
+
+    if (canFit4Col) {
+      double maxH = 0;
+      for (int i = 0; i < 4; i++) {
+        optPainters[i].paint(canvas, Offset(i * (col4W + 8), y));
+        if (optPainters[i].height > maxH) maxH = optPainters[i].height;
+      }
+      return y + maxH + 4;
+    }
+
+    // 2. Try 2-Column Layout (2 rows x 2 columns)
+    final col2W = (width - 16) / 2;
+    bool canFit2Col = true;
+    for (final p in optPainters) {
+      p.layout(maxWidth: col2W);
+      if (p.height > 36) {
+        canFit2Col = false;
+        break;
+      }
+    }
+
+    if (canFit2Col) {
+      // Row 1: Option A and Option B
+      final row1H = optPainters[0].height > optPainters[1].height
+          ? optPainters[0].height
+          : optPainters[1].height;
+      optPainters[0].paint(canvas, Offset(0, y));
+      optPainters[1].paint(canvas, Offset(col2W + 16, y));
+      y += row1H + 4;
+
+      // Row 2: Option C and Option D
+      final row2H = optPainters[2].height > optPainters[3].height
+          ? optPainters[2].height
+          : optPainters[3].height;
+      optPainters[2].paint(canvas, Offset(0, y));
+      optPainters[3].paint(canvas, Offset(col2W + 16, y));
+      y += row2H + 4;
+
+      return y;
+    }
+
+    // 3. Vertical 1-Column Layout (stacked, for long questions)
+    for (final p in optPainters) {
+      p.layout(maxWidth: width - 10);
+      p.paint(canvas, Offset(0, y));
+      y += p.height + 4;
+    }
+    return y;
+  }
+
   static Future<_RenderedBlock> _renderTestPaperQuestionCard({
     required int questionIndex,
     required Question question,
@@ -879,17 +1192,17 @@ class PdfExportService {
     canvas.scale(scale, scale);
     double y = 0;
 
-    // Question title & text
+    // Question number & text (Exam style: "43. Question Text")
     final questionPainter = TextPainter(
       text: TextSpan(
         children: [
           TextSpan(
-            text: 'Q${questionIndex + 1}. ',
+            text: '${questionIndex + 1}. ',
             style: const TextStyle(
               fontFamily: _fontFamily,
               fontFamilyFallback: _fontFallback,
               fontSize: 10.5,
-              fontWeight: FontWeight.w700,
+              fontWeight: FontWeight.w800,
               color: Color(0xFF0F172A),
             ),
           ),
@@ -912,63 +1225,45 @@ class PdfExportService {
     questionPainter.paint(canvas, Offset(0, y));
     y += questionPainter.height + 6;
 
-    // Options A, B, C, D
-    final options = [
-      ('A', question.optionA),
-      ('B', question.optionB),
-      ('C', question.optionC),
-      ('D', question.optionD),
-    ];
-
-    final cleanCorrect = question.correctAnswer.trim();
-    for (final opt in options) {
-      final isCorrect = includeAnswerKey &&
-          (opt.$1.toUpperCase() == cleanCorrect.toUpperCase() ||
-              opt.$2.trim() == cleanCorrect);
-
-      final optPainter = TextPainter(
-        text: TextSpan(
-          children: [
-            TextSpan(
-              text: '   (${opt.$1}) ',
-              style: TextStyle(
-                fontFamily: _fontFamily,
-                fontFamilyFallback: _fontFallback,
-                fontSize: 9.5,
-                fontWeight: isCorrect ? FontWeight.w700 : FontWeight.w600,
-                color: isCorrect ? const Color(0xFF059669) : const Color(0xFF334155),
-              ),
-            ),
-            TextSpan(
-              text: _cleanText(opt.$2),
-              style: TextStyle(
-                fontFamily: _fontFamily,
-                fontFamilyFallback: _fontFallback,
-                fontSize: 9.5,
-                fontWeight: isCorrect ? FontWeight.w700 : FontWeight.w400,
-                color: isCorrect ? const Color(0xFF059669) : const Color(0xFF334155),
-                height: 1.35,
-              ),
-            ),
-            if (isCorrect)
-              const TextSpan(
-                text: '   [CORRECT]',
-                style: TextStyle(
-                  fontFamily: _fontFamily,
-                  fontFamilyFallback: _fontFallback,
-                  fontSize: 9.0,
-                  fontWeight: FontWeight.w800,
-                  color: Color(0xFF059669),
-                ),
-              ),
-          ],
-        ),
-        textDirection: ui.TextDirection.ltr,
-      )..layout(maxWidth: width - 10);
-
-      optPainter.paint(canvas, Offset(0, y));
-      y += optPainter.height + 4;
+    // Optional Diagram / Reaction Mechanism Image
+    if (question.imageUrl != null && question.imageUrl!.trim().isNotEmpty) {
+      final qImage = await _loadCanvasImage(question.imageUrl);
+      if (qImage != null) {
+        final imgW = qImage.width.toDouble();
+        final imgH = qImage.height.toDouble();
+        final maxW = width - 40;
+        const maxH = 150.0;
+        double renderW = imgW;
+        double renderH = imgH;
+        if (renderW > maxW) {
+          renderH = (renderH * maxW) / renderW;
+          renderW = maxW;
+        }
+        if (renderH > maxH) {
+          renderW = (renderW * maxH) / renderH;
+          renderH = maxH;
+        }
+        final imgX = (width - renderW) / 2;
+        canvas.drawImageRect(
+          qImage,
+          Rect.fromLTWH(0, 0, imgW, imgH),
+          Rect.fromLTWH(imgX, y, renderW, renderH),
+          Paint(),
+        );
+        y += renderH + 8;
+        qImage.dispose();
+      }
     }
+
+    // Adaptive Options Grid (1 row x 4 cols, 2 rows x 2 cols, or 4 rows stacked)
+    y = _renderOptionsGrid(
+      canvas: canvas,
+      startY: y,
+      width: width,
+      question: question,
+      isSolutionReport: false,
+      includeAnswerKey: includeAnswerKey,
+    );
 
     // Explanation Box (if includeAnswerKey)
     final cleanExp = _cleanText(question.explanation);
@@ -1034,3 +1329,4 @@ class PdfExportService {
     return _RenderedBlock(pngBytes: pngData!.buffer.asUint8List(), height: y);
   }
 }
+
